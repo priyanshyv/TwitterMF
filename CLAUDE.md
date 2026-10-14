@@ -22,6 +22,7 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 | Monorepo     | npm workspaces (`api`, `web`)                        | pnpm/corepack failed: no write access to `/usr/local/bin` on the owner's Mac |
 | API          | NestJS 12 on Fastify, ESM                            | Imports need `.js` extensions (`nodenext`). Port **4000**                    |
 | Web          | Next.js 16 (App Router, `cacheComponents: true`)     | Port **3001**; port 3000 is used by another of the owner's apps              |
+| UI           | shadcn/ui (Radix, "nova" preset) + Tailwind v4       | Neutral, minimal, X-like look; dark mode via next-themes (`.dark` class)     |
 | DB           | Postgres 16 + Drizzle ORM (`drizzle-kit`)            | Chosen so the SQL stays visible and tunable                                  |
 | Cache/queues | Redis 7 (ioredis 6); BullMQ from Phase 4             |                                                                              |
 | Config       | zod-validated env in `api/src/config/env.ts`         | App crashes at boot on bad env                                               |
@@ -52,6 +53,7 @@ Run the full check line above before every commit; CI runs the same steps.
 - Every module that holds connections implements `onApplicationShutdown`; `main.ts` calls `enableShutdownHooks()`.
 - Use explicit `@Inject(TOKEN)` everywhere: Vitest doesn't emit decorator metadata, so class-type injection breaks in tests.
 - e2e tests use `app.inject()` (Fastify), not supertest, and override providers to simulate failures (see `test/health.e2e-spec.ts`).
+- Web UI: add components with `npx shadcn@latest add <name>` from `web/`, then run prettier. They land in `web/src/components/ui/` and are ours to edit. Use theme tokens (`bg-background`, `text-muted-foreground`, …), never raw colors, so dark mode keeps working. Keep the look minimal and neutral.
 - Comments explain _why_ (the concept), briefly. Match the existing style.
 
 ## Gotchas found so far
@@ -59,6 +61,8 @@ Run the full check line above before every commit; CI runs the same steps.
 - Next 16 differs from older versions: read `web/node_modules/next/dist/docs/` (or root `node_modules/next/dist/docs/`) before writing web code. Request-time data goes in `<Suspense>`, with `await connection()` from `next/server`.
 - `web` typecheck must run `next typegen` first (already in the script) for the global `LayoutProps` types.
 - `web/.gitignore` ignores `.env*`, with an exception for `.env.example`.
+- shadcn's `cn` helper comes from the `cn` npm package (by shadcn, replaces clsx + tailwind-merge); it is legitimate.
+- Headless Chrome screenshots: windows can't go below ~500px wide, so a narrower "phone" screenshot looks cropped. Use 500px.
 - pino-http's `autoLogging.ignore` doesn't work under Nest; use nestjs-pino's `exclude` instead.
 - Docker Desktop must be running before `npm run dev` (the dev script checks and says so).
 - Dev log output is kept minimal on purpose: `scripts/dev.mjs` filters known banner noise (`NOISE` list), and `api/src/config/logger.ts` hides Nest's boot chatter in dev only. Production logs stay full JSON.
