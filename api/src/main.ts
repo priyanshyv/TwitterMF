@@ -14,7 +14,8 @@ async function bootstrap() {
     new FastifyAdapter(),
     { bufferLogs: true },
   );
-  app.useLogger(app.get(Logger));
+  const logger = app.get(Logger);
+  app.useLogger(logger);
 
   const env = app.get<Env>(ENV);
   app.enableCors({ origin: env.CORS_ORIGIN.split(','), credentials: true });
@@ -24,5 +25,6 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   await app.listen(env.PORT, '0.0.0.0');
+  logger.log(`ready on http://localhost:${env.PORT}`, 'Bootstrap');
 }
 await bootstrap();

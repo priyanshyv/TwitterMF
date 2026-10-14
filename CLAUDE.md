@@ -34,7 +34,7 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 
 ```bash
 npm run setup        # install + create api/.env and web/.env.local from examples
-npm run dev          # docker compose up --wait, then api + web together
+npm run dev          # scripts/dev.mjs: checks Docker, starts infra, then api + web with short prefixed logs
 npm run infra:up | infra:down | infra:reset   # reset deletes local data
 npm run lint && npm run typecheck && npm run build && npm test && npm run test:e2e
 npm run db:generate | db:migrate | db:studio
@@ -60,7 +60,10 @@ Run the full check line above before every commit; CI runs the same steps.
 - `web` typecheck must run `next typegen` first (already in the script) for the global `LayoutProps` types.
 - `web/.gitignore` ignores `.env*`, with an exception for `.env.example`.
 - pino-http's `autoLogging.ignore` doesn't work under Nest; use nestjs-pino's `exclude` instead.
-- Docker Desktop must be running before `npm run dev`.
+- Docker Desktop must be running before `npm run dev` (the dev script checks and says so).
+- Dev log output is kept minimal on purpose: `scripts/dev.mjs` filters known banner noise (`NOISE` list), and `api/src/config/logger.ts` hides Nest's boot chatter in dev only. Production logs stay full JSON.
+- pino crashes on `hooks: undefined`; add optional pino options with a conditional spread. Vitest runs with `NODE_ENV=test`, which catches this.
+- The ioredis client needs an `error` listener, or every reconnect attempt prints an unhandled error (see `redis.module.ts`).
 
 ## Next steps (Phase 2: Core monolith)
 
