@@ -2,7 +2,7 @@
 
 A Twitter clone built to scale on free tools, and built to teach. Every phase introduces a real distributed-systems concept (caching, rate limiting, bloom filters, queues, circuit breakers, Kafka…) at the point where the app actually needs it.
 
-Roadmap and progress: https://claude.ai/artifact/FMhF5s4nSK617FuuXADcKC
+Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) (interactive checklist: https://claude.ai/artifact/FMhF5s4nSK617FuuXADcKC)
 Concepts learned so far: [docs/concepts.md](docs/concepts.md)
 
 ## Stack
