@@ -8,6 +8,7 @@ import { CountersModule } from './counters/counters.module.js';
 import { loggerOptions } from './config/logger.js';
 import { DbModule } from './db/db.module.js';
 import { HealthModule } from './health/health.module.js';
+import { RateLimitModule } from './rate-limit/rate-limit.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { TweetsModule } from './tweets/tweets.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module.js';
     RedisModule,
     CacheModule,
     CountersModule,
+    RateLimitModule,
     HealthModule,
     AuthModule,
     UsersModule,

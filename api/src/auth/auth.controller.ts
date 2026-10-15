@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { ZodPipe } from '../common/zod.pipe.js';
+import { RateLimit } from '../rate-limit/rate-limit.guard.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { toPublicUser } from '../users/user.dto.js';
@@ -46,6 +47,7 @@ export class AuthController {
   ) {}
 
   @Post('signup')
+  @RateLimit('signup')
   async signup(
     @Body(new ZodPipe(SignupSchema)) body: SignupInput,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -61,6 +63,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
+  @RateLimit('login')
   async login(
     @Body(new ZodPipe(LoginSchema)) body: LoginInput,
     @Res({ passthrough: true }) reply: FastifyReply,

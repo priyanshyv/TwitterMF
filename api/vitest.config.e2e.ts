@@ -19,6 +19,8 @@ export default defineConfig({
       JWT_SECRET: 'test-secret-at-least-32-characters-long!!',
       // Tests flush counters by hand, so timing never makes them flaky.
       COUNTER_FLUSH_INTERVAL_MS: '0',
+      // rate-limit.e2e-spec.ts turns limits back on for its own app.
+      RATE_LIMIT_ENABLED: 'false',
     },
   },
 });

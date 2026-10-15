@@ -21,7 +21,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "lab:bloom": "tsx scripts/bloom-experiment.ts",
-    "lab:stampede": "tsx scripts/stampede-experiment.ts"
+    "lab:stampede": "tsx scripts/stampede-experiment.ts",
+    "lab:ratelimit": "tsx scripts/rate-limit-experiment.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

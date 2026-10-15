@@ -21,6 +21,8 @@ const EnvSchema = z.object({
   // Set in production when web and API live on sibling subdomains
   // (e.g. "example.com" for app.example.com + api.example.com).
   COOKIE_DOMAIN: z.string().optional(),
+  // Off in most e2e tests, which create many accounts from one address.
+  RATE_LIMIT_ENABLED: z.stringbool().default(true),
   // How often pending counter changes move from Redis to Postgres. 0 turns
   // the timer off (tests flush by hand).
   COUNTER_FLUSH_INTERVAL_MS: z.coerce.number().int().min(0).default(60_000),

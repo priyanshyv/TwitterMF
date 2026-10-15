@@ -14,6 +14,7 @@ import { AuthGuard, CurrentUser, OptionalAuth } from '../auth/auth.guard.js';
 import type { AuthUser } from '../auth/auth.types.js';
 import { PageQuerySchema, type PageQuery } from '../common/pagination.js';
 import { ZodPipe } from '../common/zod.pipe.js';
+import { RateLimit } from '../rate-limit/rate-limit.guard.js';
 import { TweetsService } from './tweets.service.js';
 
 const IdSchema = z
@@ -40,6 +41,7 @@ export class TweetsController {
 
   // A reply is a tweet with replyToId.
   @Post('tweets')
+  @RateLimit('post')
   create(
     @CurrentUser() user: AuthUser,
     @Body(new ZodPipe(CreateTweetSchema)) body: CreateTweet,
@@ -72,21 +74,25 @@ export class TweetsController {
   }
 
   @Post('tweets/:id/like')
+  @RateLimit('engage')
   like(@Param('id', TweetId) id: bigint, @CurrentUser() user: AuthUser) {
     return this.tweets.like(user.id, id);
   }
 
   @Delete('tweets/:id/like')
+  @RateLimit('engage')
   unlike(@Param('id', TweetId) id: bigint, @CurrentUser() user: AuthUser) {
     return this.tweets.unlike(user.id, id);
   }
 
   @Post('tweets/:id/retweet')
+  @RateLimit('engage')
   retweet(@Param('id', TweetId) id: bigint, @CurrentUser() user: AuthUser) {
     return this.tweets.retweet(user.id, id);
   }
 
   @Delete('tweets/:id/retweet')
+  @RateLimit('engage')
   unretweet(@Param('id', TweetId) id: bigint, @CurrentUser() user: AuthUser) {
     return this.tweets.unretweet(user.id, id);
   }

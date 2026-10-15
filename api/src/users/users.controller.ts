@@ -14,6 +14,7 @@ import { AuthGuard, CurrentUser, OptionalAuth } from '../auth/auth.guard.js';
 import type { AuthUser } from '../auth/auth.types.js';
 import { PageQuerySchema, type PageQuery } from '../common/pagination.js';
 import { ZodPipe } from '../common/zod.pipe.js';
+import { RateLimit } from '../rate-limit/rate-limit.guard.js';
 import { TweetsService } from '../tweets/tweets.service.js';
 import { FollowsService } from './follows.service.js';
 import { UserRecordsService, type UserRecord } from './user-records.service.js';
@@ -68,6 +69,7 @@ export class UsersController {
 
   @Post(':username/follow')
   @HttpCode(204)
+  @RateLimit('engage')
   async follow(
     @Param('username', UsernameParam) username: string,
     @CurrentUser() viewer: AuthUser,
@@ -78,6 +80,7 @@ export class UsersController {
 
   @Delete(':username/follow')
   @HttpCode(204)
+  @RateLimit('engage')
   async unfollow(
     @Param('username', UsernameParam) username: string,
     @CurrentUser() viewer: AuthUser,
