@@ -1,0 +1,66 @@
+'use client';
+
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api/client';
+import type { Page, Tweet } from '@/lib/api/types';
+import { TweetCard } from './tweet-card';
+
+// The first page is rendered on the server; "Load more" fetches older pages
+// in the browser, passing the last tweet's ID as the cursor.
+export function TweetList({
+  initialPage,
+  endpoint,
+  empty,
+}: {
+  initialPage: Page<Tweet>;
+  endpoint: string;
+  empty: React.ReactNode;
+}) {
+  const [tweets, setTweets] = useState(initialPage.items);
+  const [cursor, setCursor] = useState(initialPage.nextCursor);
+  const [loading, setLoading] = useState(false);
+
+  async function loadMore() {
+    if (!cursor) return;
+    setLoading(true);
+    try {
+      const sep = endpoint.includes('?') ? '&' : '?';
+      const page = await api<Page<Tweet>>(`${endpoint}${sep}before=${cursor}`);
+      setTweets((prev) => [...prev, ...page.items]);
+      setCursor(page.nextCursor);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load more');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (tweets.length === 0) {
+    return (
+      <div className="px-4 py-12 text-center text-muted-foreground">
+        {empty}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <ul className="divide-y">
+        {tweets.map((t) => (
+          <li key={t.id}>
+            <TweetCard tweet={t} />
+          </li>
+        ))}
+      </ul>
+      {cursor && (
+        <div className="border-t p-3 text-center">
+          <Button variant="ghost" onClick={loadMore} disabled={loading}>
+            {loading ? 'Loading…' : 'Load more'}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

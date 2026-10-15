@@ -1,134 +1,92 @@
-import { connection } from 'next/server';
+import Link from 'next/link';
 import { Suspense } from 'react';
-import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { ComposeBox } from '@/components/compose-box';
+import { TweetList } from '@/components/tweet-list';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getHealth, type DependencyStatus } from '@/lib/api';
-
-const SERVICES = [
-  { key: 'api', name: 'API', detail: 'NestJS on port 4000' },
-  { key: 'db', name: 'Postgres', detail: 'Tweets, users, follows' },
-  { key: 'redis', name: 'Redis', detail: 'Cache, counters, queues' },
-] as const;
+import { WhoToFollow } from '@/components/who-to-follow';
+import { getMe, getTimeline } from '@/lib/api/server';
 
 export default function Home() {
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 px-4 py-12">
-      <section className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-balance">
-          A Twitter clone, built one concept at a time.
-        </h1>
-        <p className="text-muted-foreground">
-          Phase 1 is done: the stack runs end to end. Sign-up and tweets arrive
-          in Phase 2.
-        </p>
-      </section>
+    <Suspense fallback={<FeedSkeleton />}>
+      <HomeContent />
+    </Suspense>
+  );
+}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>System status</CardTitle>
-          <CardDescription>Checked live on every page load.</CardDescription>
-        </CardHeader>
-        <Suspense fallback={<StatusSkeleton />}>
-          <Status />
+async function HomeContent() {
+  const me = await getMe();
+  if (!me) return <Landing />;
+
+  const timeline = (await getTimeline()) ?? { items: [], nextCursor: null };
+  return (
+    <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <main className="min-w-0 rounded-xl border">
+        <h1 className="px-4 py-3 text-lg font-semibold">Home</h1>
+        <Separator />
+        <ComposeBox displayName={me.displayName} />
+        <Separator />
+        <TweetList
+          // A new first tweet (after posting) remounts the list with fresh data.
+          key={timeline.items[0]?.id ?? 'empty'}
+          initialPage={timeline}
+          endpoint="/timeline"
+          empty="Your timeline is empty. Post something, or follow a few people."
+        />
+      </main>
+      <aside className="min-w-0">
+        <Suspense fallback={<Skeleton className="h-64 rounded-xl" />}>
+          <WhoToFollow />
         </Suspense>
-      </Card>
+      </aside>
+    </div>
+  );
+}
+
+function Landing() {
+  return (
+    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-20">
+      <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+        See what&apos;s happening.
+      </h1>
+      <p className="max-w-prose text-lg text-muted-foreground">
+        TwitterMF is a Twitter clone built to learn system design: bloom
+        filters, rotating tokens, cursor pagination, and more as it grows.
+      </p>
+      <div className="flex flex-wrap gap-3">
+        <Button size="lg" asChild>
+          <Link href="/signup">Create account</Link>
+        </Button>
+        <Button size="lg" variant="outline" asChild>
+          <Link href="/login">Log in</Link>
+        </Button>
+      </div>
+      <Link
+        href="/status"
+        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+      >
+        System status
+      </Link>
     </main>
   );
 }
 
-async function Status() {
-  // Health must be checked on every request, never baked in at build time.
-  await connection();
-  const health = await getHealth();
-
-  const states: Record<(typeof SERVICES)[number]['key'], DependencyStatus> = {
-    api: health ? 'up' : 'down',
-    db: health?.db ?? 'down',
-    redis: health?.redis ?? 'down',
-  };
-
+function FeedSkeleton() {
   return (
-    <>
-      <CardContent>
-        <ul className="divide-y">
-          {SERVICES.map((service) => (
-            <li
-              key={service.key}
-              className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-            >
-              <div className="min-w-0">
-                <p className="font-medium">{service.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {service.detail}
-                </p>
-              </div>
-              <StatusBadge status={states[service.key]} />
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-      <CardFooter className="text-sm text-muted-foreground">
-        {health ? (
-          <>API uptime {formatUptime(health.uptimeSeconds)}</>
-        ) : (
-          <>
-            Can&apos;t reach the API. Is{' '}
-            <code className="mx-1 font-mono text-foreground">npm run dev</code>{' '}
-            running?
-          </>
-        )}
-      </CardFooter>
-    </>
-  );
-}
-
-function StatusBadge({ status }: { status: DependencyStatus }) {
-  if (status === 'up') {
-    return (
-      <Badge
-        variant="outline"
-        className="gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
-      >
-        <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
-        Up
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="destructive" className="gap-1.5">
-      <span className="size-1.5 rounded-full bg-destructive" aria-hidden />
-      Down
-    </Badge>
-  );
-}
-
-function StatusSkeleton() {
-  return (
-    <CardContent className="flex flex-col gap-5">
-      {SERVICES.map((service) => (
-        <div key={service.key} className="flex items-center justify-between">
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-3 w-36" />
+    <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="flex flex-col gap-6 rounded-xl border p-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="flex gap-3">
+            <Skeleton className="size-10 rounded-full" />
+            <div className="flex flex-1 flex-col gap-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-full" />
+            </div>
           </div>
-          <Skeleton className="h-5 w-12 rounded-full" />
-        </div>
-      ))}
-    </CardContent>
+        ))}
+      </div>
+    </div>
   );
-}
-
-function formatUptime(seconds: number) {
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
