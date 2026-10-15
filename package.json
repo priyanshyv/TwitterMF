@@ -28,7 +28,8 @@
     "lab:explain": "docker exec -i twittermf-postgres-1 psql -U twitter -d twitter -f - < api/scripts/explain-timeline.sql",
     "lab:bloom": "npm run lab:bloom --silent -w api",
     "lab:stampede": "npm run lab:stampede --silent -w api",
-    "lab:ratelimit": "npm run lab:ratelimit --silent -w api"
+    "lab:ratelimit": "npm run lab:ratelimit --silent -w api",
+    "db:seed": "npm run db:seed --silent -w api --"
   },
   "devDependencies": {
     "prettier": "^3.9.10"
