@@ -14,21 +14,21 @@ Done when the API and web app both run locally with one command.
 - [x] Health endpoint with deadlines: `GET /health` with a 1s timeout per dependency, 503 naming whichever is down. _Concepts: health checks, timeouts_
 - [x] CI on every push: lint, typecheck, build, unit and e2e tests against real Postgres and Redis. _Concepts: CI_
 
-## 2. Core monolith (weeks 2–4)
+## 2. Core monolith (weeks 2–4): done
 
 Done when two accounts can follow each other and see each other's tweets.
 
-- [ ] Design the schema: users, tweets, follows, likes. Index `tweets(author_id, id desc)`, `follows(follower_id)`, `follows(followee_id)`. Run EXPLAIN before and after. _Concepts: B-tree indexes_
-- [ ] Set up migrations with drizzle-kit. _Concepts: schema migrations_
-- [ ] Snowflake-style ID generator: 64-bit IDs from timestamp + worker ID + sequence. Unique across instances, sortable by time, no DB round trip. _Concepts: Snowflake IDs_
-- [ ] Build auth: argon2 password hashing, a short-lived JWT access token, and a refresh token that rotates on every use (reuse means theft, so revoke the family). _Concepts: password hashing, JWT + refresh rotation_
-- [ ] Bloom filter for "username taken?": hand-built on Redis SETBIT/GETBIT with k hashes. "No" is certain; "maybe" falls back to Postgres. Measure the false-positive rate against size, then compare with RedisBloom `BF.ADD`. _Concepts: bloom filter, probabilistic data structures_
-- [ ] Post a tweet: `POST /tweets`, 280-character limit, zod validation. _Concepts: input validation_
-- [ ] Follow and unfollow: `POST`/`DELETE /users/:id/follow`; block following yourself.
-- [ ] Profile endpoint: user info plus their tweets, newest first.
-- [ ] Home timeline v1 (fan-out on read): one SQL query joining follows and tweets, ordered by tweet ID. _Concepts: fan-out on read_
-- [ ] Cursor pagination: `?before=<tweetId>` instead of OFFSET everywhere. _Concepts: cursor pagination_
-- [ ] Frontend screens: login, signup, compose box, home feed, profile.
+- [x] Design the schema: users, tweets, follows, likes. Index `tweets(author_id, id desc)`, `follows(follower_id)`, `follows(followee_id)`. Run EXPLAIN before and after. _Concepts: B-tree indexes_
+- [x] Set up migrations with drizzle-kit. _Concepts: schema migrations_
+- [x] Snowflake-style ID generator: 64-bit IDs from timestamp + worker ID + sequence. Unique across instances, sortable by time, no DB round trip. _Concepts: Snowflake IDs_
+- [x] Build auth: argon2 password hashing, a short-lived JWT access token, and a refresh token that rotates on every use (reuse means theft, so revoke the family). _Concepts: password hashing, JWT + refresh rotation_
+- [x] Bloom filter for "username taken?": hand-built on Redis SETBIT/GETBIT with k hashes. "No" is certain; "maybe" falls back to Postgres. Measure the false-positive rate against size, then compare with Redis 8's built-in `BF.ADD`. _Concepts: bloom filter, probabilistic data structures_
+- [x] Post a tweet: `POST /tweets`, 280-character limit, zod validation. _Concepts: input validation_
+- [x] Follow and unfollow: `POST`/`DELETE /users/:username/follow`; block following yourself.
+- [x] Profile endpoint: user info plus their tweets, newest first.
+- [x] Home timeline v1 (fan-out on read): one SQL query over follows and tweets, ordered by tweet ID (rewritten with LATERAL so it uses the index). _Concepts: fan-out on read_
+- [x] Cursor pagination: `?before=<tweetId>` instead of OFFSET everywhere. _Concepts: cursor pagination_
+- [x] Frontend screens: login, signup, compose box, home feed, profile.
 
 ## 3. Caching and engagement (weeks 5–6)
 
