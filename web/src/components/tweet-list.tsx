@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api/client';
-import type { Page, Tweet } from '@/lib/api/types';
-import { TweetCard } from './tweet-card';
+import type { FeedItem, Page } from '@/lib/api/types';
+import { FeedItemCard } from './tweet-card';
 
 // The first page is rendered on the server; "Load more" fetches older pages
 // in the browser, passing the last tweet's ID as the cursor.
@@ -14,7 +14,7 @@ export function TweetList({
   endpoint,
   empty,
 }: {
-  initialPage: Page<Tweet>;
+  initialPage: Page<FeedItem>;
   endpoint: string;
   empty: React.ReactNode;
 }) {
@@ -27,7 +27,9 @@ export function TweetList({
     setLoading(true);
     try {
       const sep = endpoint.includes('?') ? '&' : '?';
-      const page = await api<Page<Tweet>>(`${endpoint}${sep}before=${cursor}`);
+      const page = await api<Page<FeedItem>>(
+        `${endpoint}${sep}before=${cursor}`,
+      );
       setTweets((prev) => [...prev, ...page.items]);
       setCursor(page.nextCursor);
     } catch (err) {
@@ -50,7 +52,7 @@ export function TweetList({
       <ul className="divide-y">
         {tweets.map((t) => (
           <li key={t.id}>
-            <TweetCard tweet={t} />
+            <FeedItemCard item={t} />
           </li>
         ))}
       </ul>

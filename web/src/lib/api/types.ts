@@ -9,11 +9,34 @@ export interface User {
   createdAt: string;
 }
 
+export interface UserRef {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
 export interface Tweet {
   id: string;
   text: string;
   createdAt: string;
-  author: { id: string; username: string; displayName: string };
+  author: UserRef;
+  replyTo: { id: string; author: UserRef } | null;
+  counts: { likes: number; replies: number; retweets: number };
+  // What the logged-in viewer has done to it; null when logged out.
+  viewer: { liked: boolean; retweeted: boolean } | null;
+}
+
+// A row in a timeline or profile. `id` is the row's own ID (the pagination
+// cursor); for a retweet, `tweet` is the original.
+export interface FeedItem {
+  id: string;
+  retweetedBy: UserRef | null;
+  tweet: Tweet;
+}
+
+export interface Thread {
+  tweet: Tweet;
+  ancestors: Tweet[];
 }
 
 export interface Page<T> {
@@ -27,11 +50,7 @@ export interface Profile {
   viewer: { isMe: boolean; follows: boolean } | null;
 }
 
-export interface Suggestion {
-  id: string;
-  username: string;
-  displayName: string;
-}
+export type Suggestion = UserRef;
 
 export type DependencyStatus = 'up' | 'down';
 

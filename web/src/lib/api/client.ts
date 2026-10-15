@@ -33,13 +33,20 @@ function refreshSession(): Promise<boolean> {
 // the request retried, so a tab left open for an hour still works.
 export async function api<T = void>(
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: {
+    method?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
   retry = true,
 ): Promise<T> {
   const res = await fetch(`${PUBLIC_API_URL}${path}`, {
     method: init.method ?? 'GET',
     credentials: 'include',
-    headers: init.body ? { 'content-type': 'application/json' } : undefined,
+    headers: {
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...init.headers,
+    },
     body: init.body ? JSON.stringify(init.body) : undefined,
   });
 

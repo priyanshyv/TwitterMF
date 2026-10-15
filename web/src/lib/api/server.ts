@@ -1,11 +1,12 @@
 import { cookies } from 'next/headers';
 import { SERVER_API_URL } from './config';
 import type {
+  FeedItem,
   HealthReport,
   Page,
   Profile,
   Suggestion,
-  Tweet,
+  Thread,
   User,
 } from './types';
 
@@ -27,16 +28,26 @@ export async function getMe(): Promise<User | null> {
   return (await get<{ user: User }>('/auth/me'))?.user ?? null;
 }
 
-export function getTimeline(): Promise<Page<Tweet> | null> {
-  return get<Page<Tweet>>('/timeline');
+export function getTimeline(): Promise<Page<FeedItem> | null> {
+  return get<Page<FeedItem>>('/timeline');
+}
+
+export function getThread(id: string): Promise<Thread | null> {
+  return get<Thread>(`/tweets/${encodeURIComponent(id)}`);
+}
+
+export function getReplies(id: string): Promise<Page<FeedItem> | null> {
+  return get<Page<FeedItem>>(`/tweets/${encodeURIComponent(id)}/replies`);
 }
 
 export function getProfile(username: string): Promise<Profile | null> {
   return get<Profile>(`/users/${encodeURIComponent(username)}`);
 }
 
-export function getUserTweets(username: string): Promise<Page<Tweet> | null> {
-  return get<Page<Tweet>>(`/users/${encodeURIComponent(username)}/tweets`);
+export function getUserTweets(
+  username: string,
+): Promise<Page<FeedItem> | null> {
+  return get<Page<FeedItem>>(`/users/${encodeURIComponent(username)}/tweets`);
 }
 
 export async function getSuggestions(): Promise<Suggestion[]> {
