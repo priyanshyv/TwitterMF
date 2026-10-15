@@ -23,7 +23,8 @@
     "lab:bloom": "tsx scripts/bloom-experiment.ts",
     "lab:stampede": "tsx scripts/stampede-experiment.ts",
     "lab:ratelimit": "tsx scripts/rate-limit-experiment.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "counters:reconcile": "tsx scripts/reconcile-counters.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

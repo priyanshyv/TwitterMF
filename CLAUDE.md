@@ -6,7 +6,7 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 
 - Full plan with concept tags: [docs/ROADMAP.md](docs/ROADMAP.md). It is the source of truth; keep it updated.
 - Concepts log: [docs/concepts.md](docs/concepts.md). Add an entry (What / Why / Where / Try it) whenever a concept's code lands.
-- Status: **Phases 1 and 2 done** (2026-10-15). **Next: Phase 3 (caching and engagement), starting with likes and replies.**
+- Status: **Phases 1–3 done** (2026-10-15). **Next: Phase 4 (async work and real-time), starting with a BullMQ worker process.**
 
 ## How to work with the owner
 
@@ -42,6 +42,10 @@ npm run lint && npm run typecheck && npm run build && npm test && npm run test:e
 npm run db:generate | db:migrate | db:studio
 npm run lab:explain  # EXPLAIN ANALYZE lab on 1M tweets (indexes, LATERAL)
 npm run lab:bloom    # bloom filter false-positive experiment
+npm run lab:stampede # cache stampede: 1,000 misses -> 1,000 / 4 / 1 DB queries
+npm run lab:ratelimit # naive vs Lua limiter under concurrency; bucket vs window
+npm run db:seed      # ~60 fake people + tweets/likes/follows (-- --reset wipes all); login demo / password123
+npm run counters:reconcile  # recompute stored counts from source rows
 ```
 
 Run the full check line above before every commit; CI runs the same steps.
@@ -55,13 +59,19 @@ Run the full check line above before every commit; CI runs the same steps.
 - `api/src/health/`: `GET /health` returns 200 or 503 with per-dependency status.
 - `api/src/common/`: `snowflake.ts` + `IdModule` (`SNOWFLAKE` token) for all IDs; `zod.pipe.ts` (`new ZodPipe(schema)` on `@Body`/`@Query`/`@Param`); `pagination.ts` (`PageQuerySchema`, `toPage` with the limit+1 trick); `pg-errors.ts`.
 - `api/src/auth/`: `AuthGuard` (cookie or Bearer) is global; protect routes with `@UseGuards(AuthGuard)`, allow anonymous with `@OptionalAuth()`, read the user with `@CurrentUser()`. `TokensService.rotate()` holds the refresh/reuse logic.
-- `api/src/users/` (profiles, follows, suggestions), `api/src/tweets/` (create, by author, timeline), `api/src/usernames/` (bloom filter).
+- `api/src/users/` (profiles, follows, suggestions; `UserRecordsService` = cached users + live counts, in its own `UserRecordsModule` to avoid a users<->tweets cycle), `api/src/tweets/` (create/reply, like, retweet, timeline, thread, replies), `api/src/usernames/` (bloom filter).
+- `api/src/cache/`: `RedisCache` (`CACHE` token): `getMany(keys, ttl, loader)` / `get` / `invalidate`. Cache-aside with TTL jitter, negative caching (`'null'` for 30 s), single-flight + Redis lock. Keys: `cache:tweet:<id>`, `cache:user:<id>`, `cache:uname:<lower>`.
+- `api/src/counters/`: `CountersService.change([...])` for every count change (never `UPDATE ... count + 1` directly); `pending()` to overlay; `flush()` every `COUNTER_FLUSH_INTERVAL_MS`; `reconcile()`. Redis keys `counter:<entity>:<id>` + set `counter:dirty`.
+- `api/src/rate-limit/`: policies in `policies.ts`; put `@RateLimit('<policy>')` under the route decorator (after `@UseGuards(AuthGuard)` for per-user). Keys `rl:<policy>:<subject>`.
+- `api/src/idempotency/`: `@Idempotent()` on create endpoints; keys `idem:<userId>:<key>`.
+- Feeds: queries return IDs only, then `hydrate()` builds `FeedItem { id (row/cursor), retweetedBy, tweet: TweetView }`. Retweets are tweet rows with `retweet_of_id` and empty text; actions on a retweet target the original (`contentId()`).
 - IDs: `bigint` in the DB and in TypeScript (`mode: 'bigint'`), **strings** in every API response (DTO mappers `toPublicUser`, `toTweetView`). Never send a BigInt to JSON.
 - Raw SQL via `db.execute(sql...)` returns bigint as string and timestamps as Postgres text, so select timestamps with `to_char(... 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`(see`TWEET_COLUMNS`).
-- Web: server components fetch through `web/src/lib/api/server.ts` (forwards cookies); client components use `api()` from `web/src/lib/api/client.ts` (refresh once on 401, then retry). `web/src/proxy.ts` refreshes expiring access tokens before pages render. After a mutation, call `router.refresh()`.
+- Web: tweet UI is `FeedItemCard` / `TweetCard` + client `TweetActions` (optimistic like/retweet); thread page `/[username]/status/[id]`; links via `tweetHref()`. Server components fetch through `web/src/lib/api/server.ts` (forwards cookies); client components use `api()` from `web/src/lib/api/client.ts` (refresh once on 401, then retry). `web/src/proxy.ts` refreshes expiring access tokens before pages render. After a mutation, call `router.refresh()`.
 - Every module that holds connections implements `onApplicationShutdown`; `main.ts` calls `enableShutdownHooks()`.
 - Use explicit `@Inject(TOKEN)` everywhere: Vitest doesn't emit decorator metadata, so class-type injection breaks in tests.
-- e2e tests use `app.inject()` (Fastify), not supertest, and override providers to simulate failures. Use `createTestApp`, `resetData` and `signup` from `test/helpers.ts`. They run against a separate `twitter_test` database and Redis DB 1 (set in `vitest.config.e2e.ts`), one file at a time.
+- e2e tests use `app.inject()` (Fastify), not supertest, and override providers to simulate failures. Use `createTestApp`, `resetData` and `signup` from `test/helpers.ts`. They run against a separate `twitter_test` database and Redis DB 1 (set in `vitest.config.e2e.ts`), one file at a time, with `RATE_LIMIT_ENABLED=false` and `COUNTER_FLUSH_INTERVAL_MS=0` (call `CountersService.flush()` by hand). To test limits, override `ENV` (see `rate-limit.e2e-spec.ts`).
+- Redis DBs: 0 = dev app, 1 = tests, 2 = lab scripts. Everything in Redis is derived and can be flushed.
 - Web UI: add components with `npx shadcn@latest add <name>` from `web/`, then run prettier. They land in `web/src/components/ui/` and are ours to edit. Use theme tokens (`bg-background`, `text-muted-foreground`, …), never raw colors, so dark mode keeps working. Keep the look minimal and neutral.
 - Comments explain _why_ (the concept), briefly. Match the existing style.
 
@@ -82,13 +92,21 @@ Run the full check line above before every commit; CI runs the same steps.
 - React lint (`react-hooks/set-state-in-effect`) rejects `setState` called directly in an effect: derive state during render instead (see `signup-form.tsx`).
 - Next.js streams `<Suspense>` content after load; in browser tests, wait for elements (`waitFor`) instead of checking `isVisible()` right after `goto`.
 - Bloom filters can't delete: names of deleted accounts stay "maybe taken" and fall through to Postgres (correct, just slower).
+- CORS on Fastify defaults to GET/HEAD/POST only; methods and exposed headers are listed in `app.setup.ts`. Any new custom request header works (headers are reflected), but new response headers browsers must read go in `exposedHeaders`.
+- ioredis 6 speaks RESP3: `ZRANGE ... WITHSCORES` and similar return nested pairs, not flat arrays. Inside Lua scripts replies are flat; prefer Lua for multi-step logic anyway.
+- Drizzle `sql` templates: pass arrays via query builder `inArray()`, not `${array}` inside raw SQL.
+- Browser tests of optimistic UI must wait for the server response (`page.waitForResponse`), or they pass even when the request fails.
+- `db:seed` boots the app via `NestFactory.createApplicationContext`; reuse this pattern for one-off scripts instead of duplicating service logic.
+- Seed assigns Snowflake IDs in time order with worker 1023 (reserved for scripts); `created_at` must match the ID's timestamp or feeds sort wrongly.
 
-## Next steps (Phase 3: Caching and engagement)
+## Next steps (Phase 4: Async work and real-time)
 
-1. Likes (table exists) and replies (`reply_to_id` + thread view), then retweets.
-2. Cache hot objects in Redis: cache-aside with TTL jitter and a single-flight lock against stampedes.
-3. Move like/reply/follower counts to Redis counters, flushed to Postgres every minute (write-behind). Replace the `COUNT(*)` in `FollowsService.stats`.
-4. Rate limiting two ways (token bucket and sliding-window log), each as a Redis Lua script; start with login and posting.
-5. Idempotency keys on `POST /tweets`.
+1. BullMQ worker as a separate process (`api/src/worker.ts`, own npm script; reuse modules via `createApplicationContext`). Retries with exponential backoff + jitter, dead-letter queue after 5 failures, a way to inspect and replay it.
+2. Fan-out on write: on a new tweet, a job pushes its ID into each follower's Redis list (`timeline:<userId>`, capped ~800). Timeline reads from the list, falling back to the current fan-out-on-read query on a cold list.
+3. Hybrid: skip fan-out for authors above ~10,000 followers; merge their tweets at read time. The seed's celebrities are a good test (temporarily lower the threshold).
+4. Notifications table + worker (follows, likes, replies, mentions), with a bell UI.
+5. WebSocket gateway with Redis pub/sub across instances: live notifications and a "new tweets" banner.
+
+Possible Phase 3 follow-ups: a `/notifications`-style "likes" tab; editing profiles (would need `cache:user` invalidation); hashtags arrive in Phase 5.
 
 When a task is done, tick it in `docs/ROADMAP.md` and add its concept to `docs/concepts.md`.

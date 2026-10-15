@@ -122,3 +122,104 @@ The same 100k names as a Redis SET take 4.9 MB, 42× more. Overfilling ruins a f
 **What:** "Next page" means "20 tweets with an ID below the last one you saw" (`?before=<id>`), not "skip 40, take 20".
 **Why:** `OFFSET 10000` makes Postgres read and discard 10,000 rows, so deep pages get slower. A cursor jumps straight there through the index, so every page costs the same. New tweets arriving while you scroll can't shift pages and cause duplicates or gaps. Queries fetch one extra row (limit + 1) to learn whether another page exists without a second query.
 **Where:** `api/src/common/pagination.ts`, `web/src/components/tweet-list.tsx` (Load more).
+
+## Phase 3: Caching and engagement
+
+### Cache-aside (lazy loading)
+
+**What:** To read a tweet or user, look in Redis first; on a miss, load it from Postgres and store a copy with an expiry (TTL). Writes go to Postgres only; when stored data changes, the cached copy is deleted so the next read reloads it.
+**Why:** A popular tweet appears in thousands of timelines. Without a cache, every one of those page loads reads the same row from Postgres. With one, Postgres is read once per TTL. Redis only ever holds copies, so if it's flushed the app just gets slower for a moment, never wrong.
+**Where:** `api/src/cache/redis-cache.ts`. Used for tweet bodies (`cache:tweet:<id>`, 10 min), users (`cache:user:<id>`, 5 min) and username → ID (`cache:uname:<name>`, 1 h) in `tweets.service.ts` and `user-records.service.ts`.
+**Try it:** open the timeline, then look at the `cache:*` keys in Redis Insight. Run `FLUSHDB` and reload: the page still works and the keys come back.
+
+### Separating "which items" from "what's in them" (hydration)
+
+**What:** Feed queries now return only IDs, straight from an index. A second step, hydration, fetches the bodies (from the cache), adds counts, and adds the viewer's own state ("did I like this?").
+**Why:** The ID query is cheap and always fresh. The bodies are the expensive, repeated part, and they're the same for everyone, so they're cacheable. Per-viewer data (your likes) is not, so it's looked up separately with two indexed queries. Twitter's real timeline service works the same way.
+**Where:** `hydrate()` in `api/src/tweets/tweets.service.ts`.
+
+### TTL jitter and negative caching
+
+**What:** Every TTL gets ±10% randomness (600 s becomes anything from 540 to 660 s). Lookups that find nothing are cached too, as `null`, for 30 seconds.
+**Why:** Keys cached together (after a deploy, or after a flush) would otherwise all expire together and hit Postgres all at once. Negative caching stops repeated lookups of things that don't exist (typos, bots probing IDs) from reaching Postgres every time. The catch: when the thing starts existing, the `null` must be deleted. Sign-up does that for usernames.
+**Where:** `jitter()` and the `MISSING` marker in `redis-cache.ts`; `UsersService.create()` clears `cache:uname:<name>`.
+
+### Cache stampede protection (single-flight + lock)
+
+**What:** When a hot key expires and many requests miss it at the same moment, only **one** of them loads it from Postgres; the others wait for that result. There are two layers. **Single-flight** shares one in-flight load among requests inside one API instance (a map of promises). A **Redis lock** (`SET lock:<key> NX PX 3000`) does the same across instances; the losers poll the cache briefly, and load it themselves if the winner takes too long.
+**Why:** Measured with `npm run lab:stampede` (1,000 simultaneous requests for one expired key, 4 instances):
+
+| Protection           | Postgres queries     |
+| -------------------- | -------------------- |
+| None                 | 1,000                |
+| Single-flight        | 4 (one per instance) |
+| Single-flight + lock | **1**                |
+
+The lock is released with a small Lua script that deletes it **only if it still holds our random token**. If our load outlived the lock's 3 s expiry, someone else may own it by now, and a plain `DEL` would delete their lock.
+**Where:** `getMany()`, `loadWithLock()`, `RELEASE_LOCK` in `api/src/cache/redis-cache.ts`; `api/scripts/stampede-experiment.ts`.
+
+### Write-behind counters
+
+**What:** A like writes its `likes` row to Postgres immediately; that row is the truth. The **count** goes to Redis as a pending change (`HINCRBY counter:tweet:<id> likes 1`, plus the ID in a "dirty" set). Every 60 seconds, a flush moves all pending changes into Postgres in one `UPDATE … FROM (VALUES …)` per table. Counts shown to users are "stored count + pending change", so they're always current.
+**Why:** Updating `tweets.like_count` on every like makes every like on a viral tweet wait for the same row lock. Batching turns 10,000 row updates into one. The details that keep it correct:
+
+- **Atomic hand-off.** Pending changes are read and deleted in one Lua script, so an increment can't slip in between and vanish.
+- **Several flushers are safe.** `SPOP` hands each dirty entry to exactly one API instance, so several can flush at once.
+- **Failures don't lose counts.** A failed flush puts the changes back; shutdown does a final flush; if Redis is down, changes go straight to Postgres.
+- **Stale cached copies are dropped.** After a flush, the cached copies (which hold the old stored count) are deleted twice: once right away, and again 2 s later, in case a reader cached a pre-flush row in between ("delayed double delete").
+
+**The trade-off:** if Redis is lost between flushes, up to a minute of count changes is lost. The likes themselves are safe, so `npm run counters:reconcile` can recompute every count from the source rows.
+**Where:** `api/src/counters/counters.service.ts`; `COUNTER_FLUSH_INTERVAL_MS` in `.env`.
+**Try it:** like a tweet, then in DBeaver see `like_count` unchanged while Redis Insight shows `counter:tweet:<id>`. Within a minute, the Postgres column catches up and the Redis key disappears.
+
+### Rate limiting: token bucket and sliding-window log
+
+**What:** Two algorithms, each one Lua script running inside Redis.
+
+|                | Token bucket                                                | Sliding-window log                                                      |
+| -------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Idea           | Up to N tokens, refilling steadily; each request spends one | Remember the time of every request in the window; allow if fewer than N |
+| Behavior       | Short bursts OK, then a steady trickle                      | Exact count over the whole window                                       |
+| Memory per key | 2 numbers                                                   | 1 entry per request                                                     |
+| Used for       | posting, likes, retweets, follows, username checks          | login (10 per 15 min), sign-up (10/hour)                                |
+
+**Why Lua:** a limiter reads, decides and writes. As separate commands, simultaneous requests all read "1 left" and all pass. `npm run lab:ratelimit` sends 200 requests at once against a limit of 10: the naive GET + SET version allowed **all 200**; the Lua versions allowed exactly 10. Both scripts use Redis's clock (`TIME`), so API servers with slightly different clocks still agree.
+**Design choices:**
+
+- **Login key.** Login is limited per _address + account_: it slows guessing one account's password without letting a stranger lock you out from everywhere.
+- **Headers.** Responses carry `RateLimit-Limit` / `RateLimit-Remaining`; a 429 adds `Retry-After` and a readable message.
+- **Fail open.** If Redis is down, requests are allowed, because availability matters more here than strictness. A bank might fail closed.
+
+**Where:** `api/src/rate-limit/` (`redis-rate-limiter.ts`, `policies.ts`, `rate-limit.guard.ts`), `@RateLimit('<policy>')` on routes; `api/scripts/rate-limit-experiment.ts`.
+**Try it:** post 11 tweets quickly: the 11th gets "Too many requests. Try again in 6 seconds."
+
+### Idempotency keys
+
+**What:** The compose box sends a random `Idempotency-Key` header with each new tweet, and reuses the same key if the user retries that draft. The API claims the key (`SET NX`), posts the tweet, and stores the response for 24 hours. The same key again replays the stored response (`Idempotent-Replayed: true`) instead of posting twice.
+**Why:** Networks fail _after_ the server did the work: the request landed, the answer got lost, the client retries, and you get a duplicate tweet. The edge cases each have an answer:
+
+- **Still running:** a second request while the first is in progress gets 409, so a fast double-click can't race it.
+- **Different body:** reusing a key for a different request gets 422.
+- **Failure:** a failed request releases the key, so a retry really retries.
+- **Scope:** keys are per user.
+
+Payment APIs (Stripe) work exactly like this.
+**Where:** `api/src/idempotency/idempotency.interceptor.ts`, `@Idempotent()` on `POST /tweets`; `web/src/components/compose-box.tsx`.
+
+### Idempotent toggles and "act on the original"
+
+**What:** Like, retweet and follow are safe to repeat: inserts use `ON CONFLICT DO NOTHING` (backed by primary keys and a partial unique index on `(author_id, retweet_of_id)`), and counts change only when a row was really inserted or deleted (`RETURNING` tells us). Liking, retweeting or replying to a retweet targets the original tweet.
+**Why:** Clients retry and users double-click; repeating "like" must not count twice. Pointing every action at the original keeps one set of counts per tweet.
+**Where:** `like()`, `retweet()`, `contentId()` in `tweets.service.ts`; the partial indexes in `schema/index.ts`.
+
+### Recursive queries (threads)
+
+**What:** A thread page walks up the reply chain with a recursive CTE (`WITH RECURSIVE`): start at the tweet, join to its `reply_to_id`, repeat, capped at 25 hops.
+**Why:** It's one round trip instead of one query per ancestor. Replies are listed through a partial index on `(reply_to_id, id desc) WHERE reply_to_id IS NOT NULL`, which only contains replies and is therefore small.
+**Where:** `thread()` and `replies()` in `tweets.service.ts`.
+
+### CORS preflight (a bug worth remembering)
+
+**What:** Before a cross-origin `DELETE`, or a request with a custom header like `Idempotency-Key`, the browser first asks the server (an `OPTIONS` "preflight") whether it's allowed. If the answer doesn't list the method, the real request never leaves the browser.
+**Why it matters here:** NestJS on Fastify allows only GET, HEAD and POST by default. Every `DELETE` from the website (unfollow since Phase 2, unlike, undo retweet) was silently blocked. The API tests didn't notice, because they don't go through a browser. The browser test caught it once it waited for the server's real answer instead of trusting the optimistic UI.
+**Where:** `api/src/app.setup.ts`; regression test `api/test/cors.e2e-spec.ts`.

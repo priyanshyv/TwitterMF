@@ -25,20 +25,25 @@ npm run setup   # install deps, create api/.env and web/.env.local from the exam
 npm run dev     # starts Postgres + Redis in Docker, then the API and web app
 ```
 
-- Web: http://localhost:3001 (shows live API / DB / Redis status)
+- Web: http://localhost:3001
 - API: http://localhost:4000/health
+
+To get a populated network to play with, run `npm run db:seed` and log in as **demo** / **password123**.
 
 ## Scripts (run from the repo root)
 
-| Command                                | What it does                                     |
-| -------------------------------------- | ------------------------------------------------ |
-| `npm run dev`                          | Infra up, then API (watch mode) and web together |
-| `npm run infra:up` / `infra:down`      | Start / stop Postgres and Redis                  |
-| `npm run infra:reset`                  | Stop and **delete** local DB and Redis data      |
-| `npm run lint` / `typecheck` / `build` | Checks for both apps (CI runs these)             |
-| `npm test` / `npm run test:e2e`        | Unit tests / API e2e tests (needs infra up)      |
-| `npm run db:generate` / `db:migrate`   | Create / apply Drizzle migrations                |
-| `npm run db:studio`                    | Browse the database in Drizzle Studio            |
+| Command                                                                | What it does                                                                         |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `npm run dev`                                                          | Infra up, then API (watch mode) and web together                                     |
+| `npm run infra:up` / `infra:down`                                      | Start / stop Postgres and Redis                                                      |
+| `npm run infra:reset`                                                  | Stop and **delete** local DB and Redis data                                          |
+| `npm run lint` / `typecheck` / `build`                                 | Checks for both apps (CI runs these)                                                 |
+| `npm test` / `npm run test:e2e`                                        | Unit tests / API e2e tests (needs infra up)                                          |
+| `npm run db:generate` / `db:migrate`                                   | Create / apply Drizzle migrations                                                    |
+| `npm run db:studio`                                                    | Browse the database in Drizzle Studio                                                |
+| `npm run db:seed`                                                      | Add ~60 fake people, tweets, likes and follows (`-- --reset` wipes everything first) |
+| `npm run counters:reconcile`                                           | Recompute every stored count from the source rows                                    |
+| `npm run lab:explain` / `lab:bloom` / `lab:stampede` / `lab:ratelimit` | Experiments that measure each concept                                                |
 
 ## Layout
 

@@ -30,17 +30,18 @@ Done when two accounts can follow each other and see each other's tweets.
 - [x] Cursor pagination: `?before=<tweetId>` instead of OFFSET everywhere. _Concepts: cursor pagination_
 - [x] Frontend screens: login, signup, compose box, home feed, profile.
 
-## 3. Caching and engagement (weeks 5–6)
+## 3. Caching and engagement (weeks 5–6): done
 
 Done when feeds load from cache and likes, replies and retweets work.
 
-- [ ] Likes and replies (`reply_to_id`, thread view).
-- [ ] Retweets: a tweet that references the original.
-- [ ] Cache hot objects in Redis: cache-aside, TTL jitter, and a single-flight lock against stampedes. _Concepts: cache-aside, cache stampede protection_
-- [ ] Move counters to Redis: INCR counters flushed to Postgres every minute. _Concepts: write-behind_
-- [ ] Rate limiting, two ways: token bucket and sliding-window log, each as an atomic Redis Lua script. _Concepts: rate limiter, atomic Lua scripts_
-- [ ] Idempotency keys on `POST /tweets`: a retry with the same `Idempotency-Key` returns the first result. _Concepts: idempotency_
-- [ ] Integration tests for auth, posting, rate limits and the timeline.
+- [x] Likes and replies (`reply_to_id`, thread view).
+- [x] Retweets: a tweet that references the original.
+- [x] Cache hot objects in Redis: cache-aside, TTL jitter, and a single-flight lock against stampedes. _Concepts: cache-aside, cache stampede protection_
+- [x] Move counters to Redis: INCR counters flushed to Postgres every minute. _Concepts: write-behind_
+- [x] Rate limiting, two ways: token bucket and sliding-window log, each as an atomic Redis Lua script. _Concepts: rate limiter, atomic Lua scripts_
+- [x] Idempotency keys on `POST /tweets`: a retry with the same `Idempotency-Key` returns the first result. _Concepts: idempotency_
+- [x] Integration tests for auth, posting, rate limits and the timeline.
+- [x] Seed data to play with: `npm run db:seed` (60 people, ~1,500 tweets, ~5,500 likes).
 
 ## 4. Async work and real-time (weeks 7–9)
 
