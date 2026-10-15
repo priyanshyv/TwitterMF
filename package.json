@@ -26,7 +26,8 @@
     "db:studio": "npm run db:studio -w api",
     "setup": "npm install && ([ -f api/.env ] || cp api/.env.example api/.env) && ([ -f web/.env.local ] || cp web/.env.example web/.env.local)",
     "lab:explain": "docker exec -i twittermf-postgres-1 psql -U twitter -d twitter -f - < api/scripts/explain-timeline.sql",
-    "lab:bloom": "npm run lab:bloom --silent -w api"
+    "lab:bloom": "npm run lab:bloom --silent -w api",
+    "lab:stampede": "npm run lab:stampede --silent -w api"
   },
   "devDependencies": {
     "prettier": "^3.9.10"

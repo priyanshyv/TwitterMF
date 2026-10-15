@@ -3,6 +3,8 @@ import {
   bigint,
   check,
   index,
+  integer,
+  type AnyPgColumn,
   pgTable,
   primaryKey,
   text,
@@ -17,6 +19,9 @@ import {
 const id = (name: string) => bigint(name, { mode: 'bigint' });
 const createdAt = () =>
   timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
+// Stored counts, so pages never run COUNT(*). Increments land in Redis first
+// and are flushed here in batches (see counters/counters.service.ts).
+const count = (name: string) => integer(name).notNull().default(0);
 
 export const users = pgTable(
   'users',
@@ -26,6 +31,9 @@ export const users = pgTable(
     displayName: varchar('display_name', { length: 50 }).notNull(),
     bio: varchar('bio', { length: 160 }).notNull().default(''),
     passwordHash: text('password_hash').notNull(),
+    followerCount: count('follower_count'),
+    followingCount: count('following_count'),
+    tweetCount: count('tweet_count'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -43,13 +51,39 @@ export const tweets = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     text: text('text').notNull(),
+    // A reply points at the tweet it answers. If that tweet is deleted the
+    // reply stays, just detached ("this tweet is unavailable").
+    replyToId: id('reply_to_id').references((): AnyPgColumn => tweets.id, {
+      onDelete: 'set null',
+    }),
+    // A retweet is a row of its own (so it gets a time-sorted ID and shows up
+    // in followers' timelines) that points at the original, with no text.
+    retweetOfId: id('retweet_of_id').references((): AnyPgColumn => tweets.id, {
+      onDelete: 'cascade',
+    }),
+    likeCount: count('like_count'),
+    replyCount: count('reply_count'),
+    retweetCount: count('retweet_count'),
     createdAt: createdAt(),
   },
   (t) => [
     // Serves "this user's tweets, newest first" (profiles, the timeline).
     // Snowflake IDs sort by time, so id desc = newest first.
     index('tweets_author_id_id_idx').on(t.authorId, t.id.desc()),
-    check('tweets_text_length', sql`char_length(${t.text}) between 1 and 280`),
+    // Serves a thread's replies. Partial: most tweets aren't replies, so
+    // the index only holds the ones that are.
+    index('tweets_reply_to_id_id_idx')
+      .on(t.replyToId, t.id.desc())
+      .where(sql`${t.replyToId} is not null`),
+    // One retweet per user per tweet; retweeting twice is a no-op.
+    uniqueIndex('tweets_one_retweet_per_user_idx')
+      .on(t.authorId, t.retweetOfId)
+      .where(sql`${t.retweetOfId} is not null`),
+    check(
+      'tweets_text_or_retweet',
+      sql`(${t.retweetOfId} is null and char_length(${t.text}) between 1 and 280)
+          or (${t.retweetOfId} is not null and ${t.text} = '')`,
+    ),
   ],
 );
 
