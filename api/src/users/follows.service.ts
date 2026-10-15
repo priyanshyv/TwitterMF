@@ -1,38 +1,48 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
+import { CountersService } from '../counters/counters.service.js';
 import { DB, type Database } from '../db/db.module.js';
-import { follows, tweets } from '../db/schema/index.js';
-
-export interface ProfileStats {
-  followers: number;
-  following: number;
-  tweets: number;
-}
+import { follows } from '../db/schema/index.js';
 
 @Injectable()
 export class FollowsService {
-  constructor(@Inject(DB) private readonly db: Database) {}
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    @Inject(CountersService) private readonly counters: CountersService,
+  ) {}
 
   async follow(followerId: bigint, followeeId: bigint): Promise<void> {
     if (followerId === followeeId)
       throw new BadRequestException("You can't follow yourself");
     // Following twice is a no-op, not an error: retries and double-clicks
-    // are harmless (the primary key prevents duplicate rows).
-    await this.db
+    // are harmless (the primary key prevents duplicate rows). Counts only
+    // move when a row was actually added.
+    const inserted = await this.db
       .insert(follows)
       .values({ followerId, followeeId })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: follows.followeeId });
+    if (inserted.length) await this.countFollow(followerId, followeeId, 1);
   }
 
   async unfollow(followerId: bigint, followeeId: bigint): Promise<void> {
-    await this.db
+    const deleted = await this.db
       .delete(follows)
       .where(
         and(
           eq(follows.followerId, followerId),
           eq(follows.followeeId, followeeId),
         ),
-      );
+      )
+      .returning({ id: follows.followeeId });
+    if (deleted.length) await this.countFollow(followerId, followeeId, -1);
+  }
+
+  private countFollow(followerId: bigint, followeeId: bigint, by: number) {
+    return this.counters.change([
+      { entity: 'user', id: followeeId, field: 'followers', by },
+      { entity: 'user', id: followerId, field: 'following', by },
+    ]);
   }
 
   async isFollowing(followerId: bigint, followeeId: bigint): Promise<boolean> {
@@ -47,27 +57,6 @@ export class FollowsService {
       )
       .limit(1);
     return !!row;
-  }
-
-  // COUNT(*) on every profile view is fine for now: each count is an index
-  // scan over one user's rows. With celebrity accounts (millions of
-  // followers) it gets slow; Phase 3 moves these to Redis counters.
-  async stats(userId: bigint): Promise<ProfileStats> {
-    const count = (q: ReturnType<typeof sql>) => sql<number>`(${q})::int`;
-    const [row] = await this.db
-      .select({
-        followers: count(
-          sql`select count(*) from ${follows} where ${follows.followeeId} = ${userId}`,
-        ),
-        following: count(
-          sql`select count(*) from ${follows} where ${follows.followerId} = ${userId}`,
-        ),
-        tweets: count(
-          sql`select count(*) from ${tweets} where ${tweets.authorId} = ${userId}`,
-        ),
-      })
-      .from(sql`(select 1) as one`);
-    return row;
   }
 
   // "Who to follow": the newest accounts you don't follow yet.

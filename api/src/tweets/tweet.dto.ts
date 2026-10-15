@@ -1,31 +1,34 @@
+import type { UserRef } from '../users/user-records.service.js';
+
+// What clients see. IDs are strings (64-bit Snowflakes).
 export interface TweetView {
   id: string;
   text: string;
   createdAt: string;
-  author: { id: string; username: string; displayName: string };
+  author: UserRef;
+  // Set when this tweet answers another one.
+  replyTo: { id: string; author: UserRef } | null;
+  counts: { likes: number; replies: number; retweets: number };
+  // What the logged-in viewer has done to it; null for logged-out visitors.
+  viewer: { liked: boolean; retweeted: boolean } | null;
 }
 
-// Raw SQL rows: node-postgres returns bigint columns as strings, which is
-// exactly what clients need anyway. created_at arrives as an ISO-8601 string
-// formatted by Postgres (see TWEET_COLUMNS).
-export interface TweetRow extends Record<string, unknown> {
+// One entry in a timeline or profile. `id` is the row's own ID and is what
+// pagination cursors use. For a retweet that's the retweet's ID (so it sorts
+// by when it was retweeted), while `tweet` is the original.
+export interface FeedItem {
   id: string;
-  text: string;
-  created_at: string;
-  author_id: string;
-  username: string;
-  display_name: string;
+  retweetedBy: UserRef | null;
+  tweet: TweetView;
 }
 
-export function toTweetView(row: TweetRow): TweetView {
-  return {
-    id: row.id,
-    text: row.text,
-    createdAt: row.created_at,
-    author: {
-      id: row.author_id,
-      username: row.username,
-      displayName: row.display_name,
-    },
-  };
+// The cached, JSON-safe shape of a tweet row.
+export interface TweetRecord {
+  id: string;
+  authorId: string;
+  text: string;
+  createdAt: string;
+  replyToId: string | null;
+  retweetOfId: string | null;
+  counts: { likes: number; replies: number; retweets: number };
 }

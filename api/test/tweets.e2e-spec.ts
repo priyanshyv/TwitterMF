@@ -138,11 +138,9 @@ describe('tweets, follows and the home timeline', () => {
       await tweet(bob.cookie, 'bob 2');
 
       const page = (await as(alice.cookie).get('/timeline')).json();
-      expect(page.items.map((t: { text: string }) => t.text)).toEqual([
-        'bob 2',
-        'alice 1',
-        'bob 1',
-      ]);
+      expect(
+        page.items.map((t: { tweet: { text: string } }) => t.tweet.text),
+      ).toEqual(['bob 2', 'alice 1', 'bob 1']);
       expect(page.nextCursor).toBeNull();
     });
 
@@ -159,7 +157,9 @@ describe('tweets, follows and the home timeline', () => {
       do {
         const url: string = `/timeline?limit=3${cursor ? `&before=${cursor}` : ''}`;
         const page = (await as(alice.cookie).get(url)).json();
-        seen.push(...page.items.map((t: { text: string }) => t.text));
+        seen.push(
+          ...page.items.map((t: { tweet: { text: string } }) => t.tweet.text),
+        );
         cursor = page.nextCursor;
         pages++;
       } while (cursor);
@@ -183,17 +183,18 @@ describe('tweets, follows and the home timeline', () => {
       const first = (
         await app.inject({ method: 'GET', url: '/users/bob/tweets?limit=2' })
       ).json();
-      expect(first.items.map((t: { text: string }) => t.text)).toEqual([
-        'b3',
-        'b2',
-      ]);
+      expect(
+        first.items.map((t: { tweet: { text: string } }) => t.tweet.text),
+      ).toEqual(['b3', 'b2']);
       const second = (
         await app.inject({
           method: 'GET',
           url: `/users/bob/tweets?limit=2&before=${first.nextCursor}`,
         })
       ).json();
-      expect(second.items.map((t: { text: string }) => t.text)).toEqual(['b1']);
+      expect(
+        second.items.map((t: { tweet: { text: string } }) => t.tweet.text),
+      ).toEqual(['b1']);
       expect(second.nextCursor).toBeNull();
     });
 

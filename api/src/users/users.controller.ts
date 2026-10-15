@@ -16,9 +16,8 @@ import { PageQuerySchema, type PageQuery } from '../common/pagination.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { TweetsService } from '../tweets/tweets.service.js';
 import { FollowsService } from './follows.service.js';
-import { toPublicUser } from './user.dto.js';
+import { UserRecordsService, type UserRecord } from './user-records.service.js';
 import { UsernameSchema } from './user.schemas.js';
-import { UsersService } from './users.service.js';
 
 const UsernameParam = new ZodPipe(UsernameSchema);
 
@@ -26,7 +25,7 @@ const UsernameParam = new ZodPipe(UsernameSchema);
 @UseGuards(AuthGuard)
 export class UsersController {
   constructor(
-    @Inject(UsersService) private readonly users: UsersService,
+    @Inject(UserRecordsService) private readonly users: UserRecordsService,
     @Inject(FollowsService) private readonly follows: FollowsService,
     @Inject(TweetsService) private readonly tweets: TweetsService,
   ) {}
@@ -44,18 +43,15 @@ export class UsersController {
     @CurrentUser() viewer: AuthUser | undefined,
   ) {
     const user = await this.findOr404(username);
-    const [stats, viewerFollows] = await Promise.all([
-      this.follows.stats(user.id),
-      viewer && viewer.id !== user.id
-        ? this.follows.isFollowing(viewer.id, user.id)
-        : false,
-    ]);
+    const id = BigInt(user.id);
+    const isMe = viewer?.id === id;
+    const viewerFollows =
+      viewer && !isMe ? await this.follows.isFollowing(viewer.id, id) : false;
+    const { counts, ...publicUser } = user;
     return {
-      user: toPublicUser(user),
-      stats,
-      viewer: viewer
-        ? { isMe: viewer.id === user.id, follows: viewerFollows }
-        : null,
+      user: publicUser,
+      stats: counts,
+      viewer: viewer ? { isMe, follows: viewerFollows } : null,
     };
   }
 
@@ -64,9 +60,10 @@ export class UsersController {
   async userTweets(
     @Param('username', UsernameParam) username: string,
     @Query(new ZodPipe(PageQuerySchema)) page: PageQuery,
+    @CurrentUser() viewer: AuthUser | undefined,
   ) {
     const user = await this.findOr404(username);
-    return this.tweets.byAuthor(user.id, page);
+    return this.tweets.byAuthor(BigInt(user.id), page, viewer?.id);
   }
 
   @Post(':username/follow')
@@ -76,7 +73,7 @@ export class UsersController {
     @CurrentUser() viewer: AuthUser,
   ) {
     const user = await this.findOr404(username);
-    await this.follows.follow(viewer.id, user.id);
+    await this.follows.follow(viewer.id, BigInt(user.id));
   }
 
   @Delete(':username/follow')
@@ -86,11 +83,13 @@ export class UsersController {
     @CurrentUser() viewer: AuthUser,
   ) {
     const user = await this.findOr404(username);
-    await this.follows.unfollow(viewer.id, user.id);
+    await this.follows.unfollow(viewer.id, BigInt(user.id));
   }
 
-  private async findOr404(username: string) {
-    const user = await this.users.findByUsername(username);
+  // Both steps are cached: username -> ID, then ID -> user.
+  private async findOr404(username: string): Promise<UserRecord> {
+    const id = await this.users.idForUsername(username);
+    const user = id ? await this.users.get(id) : null;
     if (!user) throw new NotFoundException(`No user called @${username}`);
     return user;
   }
