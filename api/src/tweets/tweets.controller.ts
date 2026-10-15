@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { AuthGuard, CurrentUser, OptionalAuth } from '../auth/auth.guard.js';
 import type { AuthUser } from '../auth/auth.types.js';
 import { PageQuerySchema, type PageQuery } from '../common/pagination.js';
+import { Idempotent } from '../idempotency/idempotency.interceptor.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { RateLimit } from '../rate-limit/rate-limit.guard.js';
 import { TweetsService } from './tweets.service.js';
@@ -42,6 +43,7 @@ export class TweetsController {
   // A reply is a tweet with replyToId.
   @Post('tweets')
   @RateLimit('post')
+  @Idempotent()
   create(
     @CurrentUser() user: AuthUser,
     @Body(new ZodPipe(CreateTweetSchema)) body: CreateTweet,
