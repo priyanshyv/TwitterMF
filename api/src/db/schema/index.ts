@@ -104,6 +104,9 @@ export const refreshTokens = pgTable(
     // database leak doesn't hand out working sessions.
     tokenHash: text('token_hash').notNull().unique(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    // Set when this token was exchanged for a newer one.
+    rotatedAt: timestamp('rotated_at', { withTimezone: true }),
+    // Set when the whole family was killed (logout, or theft detected).
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: createdAt(),
   },

@@ -36,3 +36,34 @@ export async function resetData(app: NestFastifyApplication) {
     );
   await app.get<Redis>(REDIS).flushdb();
 }
+
+type InjectResponse = Awaited<ReturnType<NestFastifyApplication['inject']>>;
+
+// Turns a response's Set-Cookie headers into a Cookie header for the next
+// request, like a browser would.
+export function cookiesFrom(res: InjectResponse): string {
+  return res.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+}
+
+export function cookieValue(res: InjectResponse, name: string) {
+  return res.cookies.find((c) => c.name === name)?.value;
+}
+
+export async function signup(
+  app: NestFastifyApplication,
+  username = 'alice',
+  password = 'correct horse battery',
+) {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/auth/signup',
+    payload: { username, displayName: username.toUpperCase(), password },
+  });
+  if (res.statusCode !== 201)
+    throw new Error(`signup failed: ${res.statusCode} ${res.body}`);
+  return {
+    res,
+    cookie: cookiesFrom(res),
+    user: res.json<{ user: { id: string; username: string } }>().user,
+  };
+}

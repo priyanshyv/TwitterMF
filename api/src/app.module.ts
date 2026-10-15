@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
+import { AuthModule } from './auth/auth.module.js';
 import { IdModule } from './common/id.module.js';
 import { ConfigModule, ENV } from './config/config.module.js';
 import { loggerOptions } from './config/logger.js';
@@ -15,6 +16,7 @@ import { RedisModule } from './redis/redis.module.js';
     IdModule,
     RedisModule,
     HealthModule,
+    AuthModule,
   ],
 })
 export class AppModule {}
