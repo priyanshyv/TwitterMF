@@ -7,6 +7,8 @@ import { loggerOptions } from './config/logger.js';
 import { DbModule } from './db/db.module.js';
 import { HealthModule } from './health/health.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { TweetsModule } from './tweets/tweets.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { RedisModule } from './redis/redis.module.js';
     RedisModule,
     HealthModule,
     AuthModule,
+    UsersModule,
+    TweetsModule,
   ],
 })
 export class AppModule {}
