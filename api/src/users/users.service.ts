@@ -5,12 +5,14 @@ import { SNOWFLAKE } from '../common/id.module.js';
 import type { Snowflake } from '../common/snowflake.js';
 import { DB, type Database } from '../db/db.module.js';
 import { users, type User } from '../db/schema/index.js';
+import { UsernamesService } from '../usernames/usernames.service.js';
 
 @Injectable()
 export class UsersService {
   constructor(
     @Inject(DB) private readonly db: Database,
     @Inject(SNOWFLAKE) private readonly ids: Snowflake,
+    @Inject(UsernamesService) private readonly usernames: UsernamesService,
   ) {}
 
   async create(input: {
@@ -23,6 +25,7 @@ export class UsersService {
         .insert(users)
         .values({ id: this.ids.next(), ...input })
         .returning();
+      await this.usernames.add(user.username);
       return user;
     } catch (err) {
       // The unique index is the real guarantee: two sign-ups racing for the
