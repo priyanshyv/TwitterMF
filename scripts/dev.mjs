@@ -45,11 +45,24 @@ const up = spawnSync('docker', [...COMPOSE, 'up', '-d', '--wait'], {
 });
 if (up.status !== 0)
   fail('Postgres or Redis failed to start.', up.stderr || up.stdout);
+console.log(styleText('green', '✓'));
+
+// 3. Bring the database schema up to date (no-op when nothing changed).
+process.stdout.write(dim('  applying migrations…      '));
+const migrate = spawnSync(
+  'npm',
+  ['run', 'db:migrate', '--silent', '-w', 'api'],
+  {
+    encoding: 'utf8',
+  },
+);
+if (migrate.status !== 0)
+  fail('Database migrations failed.', migrate.stderr || migrate.stdout);
 console.log(`${styleText('green', '✓')}\n`);
 
 let stopping = false;
 
-// 3. API and web side by side. FORCE_COLOR keeps their colors even though
+// 4. API and web side by side. FORCE_COLOR keeps their colors even though
 //    their output is piped through this script.
 const children = APPS.map((app) => {
   const child = spawn('npm', ['run', 'dev', '--silent', '-w', app.workspace], {

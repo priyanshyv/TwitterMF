@@ -12,6 +12,15 @@ const EnvSchema = z.object({
   DATABASE_URL: z.url(),
   REDIS_URL: z.url(),
   CORS_ORIGIN: z.string().default('http://localhost:3001'),
+  // Each running API instance needs its own worker ID (0..1023) so their
+  // Snowflake IDs never collide.
+  WORKER_ID: z.coerce.number().int().min(0).max(1023).default(0),
+  // Signs access tokens. Anyone holding it can mint a login, so it is long,
+  // random, and never committed for production.
+  JWT_SECRET: z.string().min(32),
+  // Set in production when web and API live on sibling subdomains
+  // (e.g. "example.com" for app.example.com + api.example.com).
+  COOKIE_DOMAIN: z.string().optional(),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
     .default('info'),

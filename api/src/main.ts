@@ -5,6 +5,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
+import { configureApp } from './app.setup.js';
 import { ENV } from './config/config.module.js';
 import type { Env } from './config/env.js';
 
@@ -18,7 +19,7 @@ async function bootstrap() {
   app.useLogger(logger);
 
   const env = app.get<Env>(ENV);
-  app.enableCors({ origin: env.CORS_ORIGIN.split(','), credentials: true });
+  await configureApp(app, env);
 
   // On SIGTERM (deploys, Ctrl+C) Nest runs onApplicationShutdown hooks, so
   // DB and Redis connections close cleanly instead of being cut.

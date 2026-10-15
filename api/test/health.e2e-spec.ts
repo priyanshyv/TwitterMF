@@ -1,27 +1,8 @@
-import {
-  FastifyAdapter,
-  type NestFastifyApplication,
-} from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
-import { AppModule } from '../src/app.module.js';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { REDIS } from '../src/redis/redis.module.js';
+import { createTestApp } from './helpers.js';
 
 // Needs Postgres and Redis running: `npm run infra:up` from the repo root.
-async function createApp(
-  override?: (b: ReturnType<typeof Test.createTestingModule>) => void,
-) {
-  const builder = Test.createTestingModule({ imports: [AppModule] });
-  override?.(builder);
-  const moduleRef = await builder.compile();
-  const app = moduleRef.createNestApplication<NestFastifyApplication>(
-    new FastifyAdapter(),
-    { logger: false },
-  );
-  await app.init();
-  await app.getHttpAdapter().getInstance().ready();
-  return app;
-}
-
 describe('GET /health', () => {
   let app: NestFastifyApplication;
 
@@ -30,7 +11,7 @@ describe('GET /health', () => {
   });
 
   it('returns 200 when Postgres and Redis are reachable', async () => {
-    app = await createApp();
+    app = await createTestApp();
 
     const res = await app.inject({ method: 'GET', url: '/health' });
 
@@ -42,8 +23,9 @@ describe('GET /health', () => {
     const brokenRedis = {
       ping: () => Promise.reject(new Error('connection refused')),
       quit: () => Promise.resolve('OK'),
+      on: () => brokenRedis,
     };
-    app = await createApp((b) =>
+    app = await createTestApp((b) =>
       b.overrideProvider(REDIS).useValue(brokenRedis),
     );
 

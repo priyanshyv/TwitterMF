@@ -18,7 +18,7 @@ services:
       retries: 30
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     # appendonly: Redis logs every write to disk, so data survives a restart.
     command: ['redis-server', '--appendonly', 'yes']
     ports:

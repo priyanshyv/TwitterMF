@@ -24,7 +24,8 @@
     "db:generate": "npm run db:generate -w api",
     "db:migrate": "npm run db:migrate -w api",
     "db:studio": "npm run db:studio -w api",
-    "setup": "npm install && ([ -f api/.env ] || cp api/.env.example api/.env) && ([ -f web/.env.local ] || cp web/.env.example web/.env.local)"
+    "setup": "npm install && ([ -f api/.env ] || cp api/.env.example api/.env) && ([ -f web/.env.local ] || cp web/.env.example web/.env.local)",
+    "lab:explain": "docker exec -i twittermf-postgres-1 psql -U twitter -d twitter -f - < api/scripts/explain-timeline.sql"
   },
   "devDependencies": {
     "prettier": "^3.9.10"
