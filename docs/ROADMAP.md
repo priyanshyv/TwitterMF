@@ -43,16 +43,17 @@ Done when feeds load from cache and likes, replies and retweets work.
 - [x] Integration tests for auth, posting, rate limits and the timeline.
 - [x] Seed data to play with: `npm run db:seed` (60 people, ~1,500 tweets, ~5,500 likes).
 
-## 4. Async work and real-time (weeks 7–9)
+## 4. Async work and real-time (weeks 7–9): done
 
 Done when posting a tweet updates followers' feeds in the background and notifications arrive live.
 
-- [ ] BullMQ worker process, separate from the API. _Concepts: message queues, producer/consumer_
-- [ ] Retries with exponential backoff and jitter; a dead-letter queue after 5 failures, with replay. _Concepts: exponential backoff, dead-letter queue_
-- [ ] Fan-out on write: push the tweet ID to each follower's Redis list, capped at ~800 entries. _Concepts: fan-out on write_
-- [ ] Hybrid timeline: skip fan-out above 10k followers and merge at read time. _Concepts: hybrid fan-out_
-- [ ] Notifications: table plus worker (follows, likes, replies, mentions).
-- [ ] WebSocket gateway, with Redis pub/sub so it works across API instances. _Concepts: WebSockets, pub/sub_
+- [x] BullMQ worker process, separate from the API. _Concepts: message queues, producer/consumer_
+- [x] Retries with exponential backoff and jitter; a dead-letter queue after 5 failures, with replay. _Concepts: exponential backoff, dead-letter queue_
+- [x] Fan-out on write: push the tweet ID to each follower's Redis list, capped at ~800 entries. _Concepts: fan-out on write_
+- [x] Hybrid timeline: skip fan-out above 10k followers and merge at read time. _Concepts: hybrid fan-out_
+- [x] Notifications: table plus worker (follows, likes, retweets, replies, mentions), with a live bell and a notifications page. _Concepts: at-least-once delivery, idempotent consumers_
+- [x] WebSocket gateway, with Redis pub/sub so it works across API instances. _Concepts: WebSockets, pub/sub_
+- [x] Measure it: `npm run lab:fanout` (fan-out on read vs write, under concurrency). _Concepts: measure before trusting a design_
 
 ## 5. Media and search (weeks 10–11)
 

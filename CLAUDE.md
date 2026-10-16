@@ -6,7 +6,7 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 
 - Full plan with concept tags: [docs/ROADMAP.md](docs/ROADMAP.md). It is the source of truth; keep it updated.
 - Concepts log: [docs/concepts.md](docs/concepts.md). Add an entry (What / Why / Where / Try it) whenever a concept's code lands.
-- Status: **Phases 1–3 done** (2026-10-15). **Next: Phase 4 (async work and real-time), starting with a BullMQ worker process.**
+- Status: **Phases 1–4 done** (2026-10-16). **Next: Phase 5 (media and search), starting with MinIO + presigned uploads.**
 
 ## How to work with the owner
 
@@ -24,7 +24,8 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 | Web          | Next.js 16 (App Router, `cacheComponents: true`)     | Port **3001**; port 3000 is used by another of the owner's apps              |
 | UI           | shadcn/ui (Radix, "nova" preset) + Tailwind v4       | Neutral, minimal, X-like look; dark mode via next-themes (`.dark` class)     |
 | DB           | Postgres 16 + Drizzle ORM (`drizzle-kit`)            | Chosen so the SQL stays visible and tunable                                  |
-| Cache/queues | Redis 8 (ioredis 6); BullMQ from Phase 4             | Redis 8 has bloom filters (`BF.*`) built in                                  |
+| Cache/queues | Redis 8 (ioredis 6); BullMQ 6                        | Redis 8 has bloom filters (`BF.*`) built in                                  |
+| Real-time    | `ws` WebSocket server on the API at `/ws`            | Redis pub/sub `rt:user:<id>` between worker and API instances                |
 | Auth         | argon2id + jose (HS256 JWT) + @fastify/cookie        | httpOnly cookies `tmf_at` (15 min) / `tmf_rt` (30 days, rotating)            |
 | Config       | zod-validated env in `api/src/config/env.ts`         | App crashes at boot on bad env                                               |
 | Logs         | nestjs-pino (pretty in dev, JSON otherwise)          | `/health` excluded from request logs                                         |
@@ -47,6 +48,8 @@ npm run lab:stampede # cache stampede: 1,000 misses -> 1,000 / 4 / 1 DB queries
 npm run lab:ratelimit # naive vs Lua limiter under concurrency; bucket vs window
 npm run db:seed      # ~60 fake people + tweets/likes/follows (-- --reset wipes all); login demo / password123
 npm run counters:reconcile  # recompute stored counts from source rows
+npm run jobs         # queue sizes + dead-letter queue; -- --replay re-runs dead jobs
+npm run lab:fanout   # fan-out on read vs write, latency + throughput
 ```
 
 Run the full check line above before every commit; CI runs the same steps.
@@ -71,8 +74,14 @@ Run the full check line above before every commit; CI runs the same steps.
 - Web: tweet UI is `FeedItemCard` / `TweetCard` + client `TweetActions` (optimistic like/retweet); thread page `/[username]/status/[id]`; links via `tweetHref()`. Server components fetch through `web/src/lib/api/server.ts` (forwards cookies); client components use `api()` from `web/src/lib/api/client.ts` (refresh once on 401, then retry). `web/src/proxy.ts` refreshes expiring access tokens before pages render. After a mutation, call `router.refresh()`.
 - Every module that holds connections implements `onApplicationShutdown`; `main.ts` calls `enableShutdownHooks()`.
 - Use explicit `@Inject(TOKEN)` everywhere: Vitest doesn't emit decorator metadata, so class-type injection breaks in tests.
-- e2e tests use `app.inject()` (Fastify), not supertest, and override providers to simulate failures. Use `createTestApp`, `resetData` and `signup` from `test/helpers.ts`. They run against a separate `twitter_test` database and Redis DB 1 (set in `vitest.config.e2e.ts`), one file at a time, with `RATE_LIMIT_ENABLED=false` and `COUNTER_FLUSH_INTERVAL_MS=0` (call `CountersService.flush()` by hand). To test limits, override `ENV` (see `rate-limit.e2e-spec.ts`).
-- Redis DBs: 0 = dev app, 1 = tests, 2 = lab scripts. Everything in Redis is derived and can be flushed.
+- e2e tests use `app.inject()` (Fastify), not supertest, and override providers to simulate failures. Use `createTestApp` (runs the workers in-process by default), `settle(app)` (wait for queues to drain), `resetData` and `signup` from `test/helpers.ts`. Fake Redis stubs need `duplicate()` (the gateway's subscriber). WebSocket tests: `app.listen(0)` + the `ws` client. They run against a separate `twitter_test` database and Redis DB 1 (set in `vitest.config.e2e.ts`), one file at a time, with `RATE_LIMIT_ENABLED=false` and `COUNTER_FLUSH_INTERVAL_MS=0` (call `CountersService.flush()` by hand). To test limits, override `ENV` (see `rate-limit.e2e-spec.ts`).
+- Redis DBs: 0 = dev app, 1 = tests, 2 = lab scripts. Everything in Redis is derived and can be flushed, except queued jobs (flushing drops pending fan-out/notifications).
+- Processes: `api` (`src/main.ts`, HTTP + WebSockets), `job` (`src/worker.ts`, BullMQ consumers; boots `WorkerModule` = AppModule + workers via `createApplicationContext`), `web`. `npm run dev` starts all three, the worker after the API is healthy.
+- `api/src/jobs/`: queue names, job payloads and retry options in `queues.ts`; enqueue only through `JobsService` (`fanout()`, `notify()`), after the DB write, never failing the request. Job IDs can't contain `:`. Dead letters: `dead-letter.ts`. New job type = payload type in `queues.ts` + a branch in the consumer.
+- `api/src/timeline/`: `TimelineService.page()` (window read of `timeline:<id>` + merge of `timeline:<id>:celebs` authors), `push()` (LPUSHX, worker), `invalidate()` on follow/unfollow. `FanoutProcessor` runs in the worker. Lists end with sentinel `0`.
+- `api/src/notifications/`: `NotificationsService.handle(job)` (worker side; dedupe via unique index) and `list/unreadCount/markAllRead` (API side).
+- `api/src/realtime/`: `RealtimePublisher.publish(userIds, event)` from anywhere; `RealtimeGateway` only activates when an HTTP server exists. Events: `notification {unread}`, `timeline {tweetId, authorId}`; add new ones to both `realtime.publisher.ts` and `web/src/lib/api/types.ts`.
+- Web realtime: `RealtimeProvider` in the root layout; use `useRealtime(listener)` in client components (the socket opens only while something listens). Bell = `notification-bell.tsx`, banner = `new-posts-banner.tsx`, page `/notifications`.
 - Web UI: add components with `npx shadcn@latest add <name>` from `web/`, then run prettier. They land in `web/src/components/ui/` and are ours to edit. Use theme tokens (`bg-background`, `text-muted-foreground`, …), never raw colors, so dark mode keeps working. Keep the look minimal and neutral.
 - Comments explain _why_ (the concept), briefly. Match the existing style.
 
@@ -101,15 +110,20 @@ Run the full check line above before every commit; CI runs the same steps.
 - Browser tests of optimistic UI must wait for the server response (`page.waitForResponse`), or they pass even when the request fails.
 - `db:seed` boots the app via `NestFactory.createApplicationContext`; reuse this pattern for one-off scripts instead of duplicating service logic.
 - Seed assigns Snowflake IDs in time order with worker 1023 (reserved for scripts); `created_at` must match the ID's timestamp or feeds sort wrongly.
+- BullMQ 6 needs its own ioredis connection with `maxRetriesPerRequest: null`; `QUEUE_CONNECTION` is shared by queues and workers and closed by `JobsModule`. Close workers in `beforeApplicationShutdown` (before the connection goes).
+- Array pipelines: `.filter().filter().map()` runs each step over the whole array, so "seen so far" sets filled in a later step are empty in an earlier one; use a loop (bug found in notification dedupe).
+- Concurrent workers finish jobs out of order; never assert exact order of worker-produced rows in tests.
+- WebSockets aren't covered by CORS; the gateway checks `Origin` itself. Cookies reach the API's `/ws` because localhost:3001 and :4000 are the same site.
+- Measure: `lab:fanout` showed the first hybrid read slower than fan-out on read until the celebrity set was stored and the list read in windows. Re-run it after timeline changes.
+- `FANOUT_MAX_FOLLOWERS=40` in dev `.env` (seed celebrities have ~55 followers); default 10000.
 
-## Next steps (Phase 4: Async work and real-time)
+## Next steps (Phase 5: Media and search)
 
-1. BullMQ worker as a separate process (`api/src/worker.ts`, own npm script; reuse modules via `createApplicationContext`). Retries with exponential backoff + jitter, dead-letter queue after 5 failures, a way to inspect and replay it.
-2. Fan-out on write: on a new tweet, a job pushes its ID into each follower's Redis list (`timeline:<userId>`, capped ~800). Timeline reads from the list, falling back to the current fan-out-on-read query on a cold list.
-3. Hybrid: skip fan-out for authors above ~10,000 followers; merge their tweets at read time. The seed's celebrities are a good test (temporarily lower the threshold).
-4. Notifications table + worker (follows, likes, replies, mentions), with a bell UI.
-5. WebSocket gateway with Redis pub/sub across instances: live notifications and a "new tweets" banner.
-
-Possible Phase 3 follow-ups: a `/notifications`-style "likes" tab; editing profiles (would need `cache:user` invalidation); hashtags arrive in Phase 5.
+1. MinIO in `infra/docker-compose.yml` (S3-compatible; Cloudflare R2 later), presigned uploads from the browser, a `media` table, images on tweets.
+2. Image resize worker (sharp) as a new job type in the existing worker.
+3. Transactional outbox: write jobs to a Postgres `outbox` table in the same transaction as the tweet; a relay moves them to BullMQ. Closes the dual-write gap noted in `JobsService.add()`; then use it for search indexing.
+4. Meilisearch in docker-compose, indexing tweets and users from the outbox.
+5. Circuit breaker (opossum) around Meilisearch and object storage; search falls back to Postgres ILIKE when open.
+6. Hashtags and trending: extract on post, time-decayed scores in a Redis sorted set.
 
 When a task is done, tick it in `docs/ROADMAP.md` and add its concept to `docs/concepts.md`.

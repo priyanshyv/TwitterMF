@@ -223,3 +223,101 @@ Payment APIs (Stripe) work exactly like this.
 **What:** Before a cross-origin `DELETE`, or a request with a custom header like `Idempotency-Key`, the browser first asks the server (an `OPTIONS` "preflight") whether it's allowed. If the answer doesn't list the method, the real request never leaves the browser.
 **Why it matters here:** NestJS on Fastify allows only GET, HEAD and POST by default. Every `DELETE` from the website (unfollow since Phase 2, unlike, undo retweet) was silently blocked. The API tests didn't notice, because they don't go through a browser. The browser test caught it once it waited for the server's real answer instead of trusting the optimistic UI.
 **Where:** `api/src/app.setup.ts`; regression test `api/test/cors.e2e-spec.ts`.
+
+## Phase 4: Async work and real-time
+
+### Message queues: producer and consumer
+
+**What:** The API (the **producer**) no longer does slow follow-up work inside the request. It writes a small **job** to a queue in Redis ("tweet 9004 was posted by 42") and answers immediately. A separate **worker process** (the **consumer**) pulls jobs off the queue and does the work: copying the tweet into 5,000 timelines, creating notifications.
+**Why:** Posting stays fast no matter how many followers you have. If the worker is slow or down, jobs wait in the queue instead of making requests slow or failing; start more workers and they share the load (BullMQ gives each job to exactly one). The API and worker are separate programs (`npm run dev` shows them as `api` and `job`), so a stuck job can never freeze the website.
+**Where:** `api/src/jobs/queues.ts` (queue and job definitions), `jobs.module.ts` (`JobsService.fanout()` / `.notify()`, the producer), `api/src/worker/worker.service.ts` (the consumers), `api/src/worker.ts` (the process).
+**Try it:** stop the worker (Ctrl+C everything, then run only `npm run dev -w api` and `-w web`), like a tweet, and run `npm run jobs`: the job sits in `waiting`. Start `npm run dev` again and watch it drain.
+
+### Retries, exponential backoff with jitter, and a dead-letter queue
+
+**What:** A failed job is retried up to 5 times, waiting 1 s, 2 s, 4 s, 8 s between attempts (**exponential backoff**), each wait randomly shortened by up to half (**jitter**). After the 5th failure it moves to a **dead-letter queue** with its data and the error, where nothing processes it until a human looks.
+**Why:**
+
+- **Most failures are temporary** (a Redis blip, a deploy), so retrying fixes them.
+- **Backoff gives a struggling dependency room to recover** instead of hammering it.
+- **Jitter stops a retry storm.** 1,000 jobs that failed together don't all retry at the same instant.
+- **The dead-letter queue keeps nothing silently lost.** `npm run jobs` lists the jobs and the reason they failed; once the cause is fixed, `npm run jobs -- --replay` re-runs them.
+
+**Where:** `jobOptions()` in `api/src/jobs/queues.ts`; the `failed` handler in `worker.service.ts`; `api/src/jobs/dead-letter.ts`; `api/scripts/jobs.ts`. Tests: `api/test/jobs.e2e-spec.ts` (fail twice then succeed; fail 5 times → dead-letter → replay).
+
+### At-least-once delivery and idempotent consumers
+
+**What:** A queue can deliver the same job **twice**: a worker might crash after doing the work but before reporting success, and the job is then retried. So every consumer must be safe to run twice.
+**Why it's handled:**
+
+- **Notifications:** a unique index on (recipient, type, actor, tweet) plus `ON CONFLICT DO NOTHING`.
+- **Fan-out:** a repeated tweet ID in a timeline list is merged away at read time.
+- **Enqueueing:** uses a fixed job ID (`fanout-<tweetId>`), so a retried request doesn't queue it twice.
+
+This is the same idea as Phase 3's idempotency keys, applied to the consumer side.
+**Where:** `notifications_dedupe_idx` in `schema/index.ts`; the `Set` in `TimelineService.page()`; `JobsService.fanout()`.
+
+### Concurrent consumers don't preserve order
+
+**What:** The notifications worker runs 10 jobs at once, so jobs can finish in a different order than they were queued.
+**Why it matters:** A notification's time-sorted ID reflects when its job _ran_. For notifications, a few milliseconds of reordering is fine. When order matters (say, "edited" must apply after "created"), you need one consumer per key (a partition), which is what Kafka partitions give you in Phase 7. A test caught this: it expected an exact order and failed about one run in four.
+**Where:** `concurrency` in `worker.service.ts`; the comment in `test/notifications.e2e-spec.ts`.
+
+### Fan-out on write (precomputed timelines)
+
+**What:** Each active user has a Redis list `timeline:<userId>` with the IDs of the newest ~800 posts for their home feed. Posting pushes the new ID into every follower's list (in the worker). Reading the first page is now a short `LRANGE` instead of a SQL query across everyone you follow.
+**Details that make it work:**
+
+- **Cold lists:** a missing list (new or inactive user) is built once from the Phase 2 query. Idle lists expire after 7 days, so memory goes to active users only.
+- **The pusher never creates lists:** it uses `LPUSHX`, which only touches lists that already exist; a cold one is rebuilt later anyway.
+- **Read-your-writes:** your own tweet is pushed into _your_ list synchronously, so you see it before the worker runs.
+- **Empty timelines still count as built:** a marker entry `0` keeps the key alive, because Redis can't store an empty list.
+- **Old pages come from Postgres:** past the 800th entry, reads fall back to the query.
+- **Follow and unfollow drop your list,** and the next read rebuilds it. That's simpler than removing one account's tweets by hand. Your earlier question about unfollow cost is answered here: the work happens lazily, once, on your next read.
+
+**Measured** (`npm run lab:fanout`, seeded data, 100 concurrent readers):
+
+| Path                                     | p50         | p99         | Reads/s    |
+| ---------------------------------------- | ----------- | ----------- | ---------- |
+| Fan-out on read (SQL per request)        | 0.33 ms     | 0.96 ms     | 13,825     |
+| Fan-out on write, list + celebrity merge | 0.35 ms     | **0.52 ms** | 12,583     |
+| Fan-out on write, list only              | **0.11 ms** | **0.16 ms** | **92,618** |
+
+At this tiny scale (31 follows, 1,500 tweets) Postgres is barely working either way. The point is **where the work lands**:
+
+- **The SQL path** puts every read on Postgres, which has 10 pooled connections and is the hardest part to scale, and its cost grows with how many accounts you follow.
+- **The list read** costs the same for 30 or 3,000 follows and never touches Postgres.
+
+**A lesson from measuring:** the first version of the hybrid path did only **4,851 reads/s**, _slower_ than not precomputing at all. It rediscovered your celebrity follows with a join on every read, and it parsed and sorted all 800 list entries to return 20. Storing the celebrity set next to the list and reading only a window of it gave 2.6× more. **Measure before believing the design works.**
+**Where:** `api/src/timeline/timeline.service.ts`, `fanout.processor.ts`, `api/scripts/fanout-experiment.ts`.
+
+### Hybrid fan-out (celebrities)
+
+**What:** Accounts with at least `FANOUT_MAX_FOLLOWERS` followers are **not** fanned out. Their tweets are merged into each reader's page at read time, from a stored set of "celebrities you follow" (`timeline:<id>:celebs`, refreshed hourly).
+**Why:** Fanning out one tweet from an account with 50 million followers means 50 million list writes, minutes of work, for every tweet. Merging at read time costs each reader one small indexed query per page. Twitter does exactly this. The threshold is 10,000 by default; `api/.env` sets 40 so the seed's three celebrities (about 55 followers each) use the hybrid path locally.
+**Trade-offs:**
+
+- **No live banner for celebrities:** their tweets don't trigger the "new posts" banner (nothing is pushed per follower).
+- **Crossing the threshold:** an account that drops back below it has its older tweets missing from lists until they're rebuilt.
+
+**Where:** `isCelebrity()`, `storeCelebrities()`, `byAuthors()` in `timeline.service.ts`; test "skips fan-out for big accounts…" in `api/test/timeline.e2e-spec.ts`.
+
+### WebSockets and pub/sub across instances
+
+**What:** The browser keeps one **WebSocket** open to `/ws`; the server pushes small events down it (`{type: 'notification', unread: 3}`, `{type: 'timeline', …}`) instead of the page polling every few seconds. Behind a load balancer, a user's socket lives on one API instance, but events come from anywhere (usually the worker). So events travel through **Redis pub/sub**: the worker `PUBLISH`es to `rt:user:<id>`, and each API instance `SUBSCRIBE`s to the channels of the users connected to _it_.
+**Details:**
+
+- **Authentication:** the session cookie (or a Bearer token) is checked during the handshake.
+- **Origin check:** browsers attach cookies to WebSocket handshakes from _any_ site, and CORS doesn't apply to WebSockets. Without the check, a malicious page could open a socket as you (cross-site WebSocket hijacking).
+- **Heartbeat:** a ping every 30 s detects dead connections, such as a closed laptop lid.
+- **Reconnecting:** the browser reconnects with exponential backoff and jitter, so after a deploy thousands of tabs don't reconnect in the same second. It refreshes the session and re-syncs the unread count before reconnecting.
+
+**Measured:** a like reached the other user's notification bell **59 ms** later, through API → queue → worker process → Redis pub/sub → API → WebSocket → browser.
+**Where:** `api/src/realtime/realtime.gateway.ts`, `realtime.publisher.ts`; `web/src/components/realtime-provider.tsx`; tests in `api/test/realtime.e2e-spec.ts`.
+
+### The dual-write gap (preview of Phase 5)
+
+**What:** Posting writes the tweet to Postgres, _then_ adds a job to Redis. If the process crashes between the two, or Redis is down at that moment, the tweet exists but its fan-out and notifications never happen.
+**Today:** enqueueing failures are logged, and the tweet still appears (cold timelines rebuild from Postgres; your own list gets a direct push).
+**Phase 5:** the **transactional outbox** fixes this properly: the job is written to a Postgres table _in the same transaction as the tweet_, and a relay moves it to the queue.
+**Where:** `JobsService.add()` in `api/src/jobs/jobs.module.ts`.
