@@ -46,7 +46,7 @@ export function FollowButton({
       disabled={busy}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      className="min-w-24 rounded-full"
+      className="min-w-24 rounded-full font-bold"
     >
       {following ? (hover ? 'Unfollow' : 'Following') : 'Follow'}
     </Button>

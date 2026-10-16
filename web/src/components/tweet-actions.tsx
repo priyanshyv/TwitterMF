@@ -26,6 +26,10 @@ export function TweetActions({ tweet }: { tweet: Tweet }) {
     count: tweet.counts.retweets,
   });
 
+  // Which action the user just turned on: only that one bounces (not every
+  // already-liked tweet when the page loads).
+  const [popped, setPopped] = useState<'like' | 'retweet' | null>(null);
+
   async function toggle(
     kind: 'like' | 'retweet',
     state: Toggle,
@@ -33,6 +37,7 @@ export function TweetActions({ tweet }: { tweet: Tweet }) {
   ) {
     if (!loggedIn) return router.push('/login');
     const next = !state.on;
+    setPopped(next ? kind : null);
     set({ on: next, count: state.count + (next ? 1 : -1) });
     try {
       const fresh = await api<Tweet>(`/tweets/${tweet.id}/${kind}`, {
@@ -50,42 +55,67 @@ export function TweetActions({ tweet }: { tweet: Tweet }) {
   }
 
   return (
-    <div className="mt-1 -ml-2 flex max-w-sm items-center justify-between text-muted-foreground">
+    <div className="-ml-2 flex max-w-md items-center justify-between">
       <Link
         href={tweetHref(tweet)}
         aria-label={`Reply (${tweet.counts.replies} replies)`}
-        className="group flex items-center gap-1 rounded-full p-2 text-sm hover:text-sky-600"
+        className={cn(ACTION, TONE.sky)}
       >
-        <MessageCircle className="size-4" />
+        <Icon tone="sky">
+          <MessageCircle />
+        </Icon>
         <Count n={tweet.counts.replies} />
       </Link>
       <ActionButton
         label={retweet.on ? 'Undo retweet' : 'Retweet'}
         active={retweet.on}
-        activeClass="text-emerald-600 dark:text-emerald-400"
+        tone="emerald"
         onClick={() => toggle('retweet', retweet, setRetweet)}
       >
-        <Repeat2 className="size-4" />
+        <Icon tone="emerald" pop={popped === 'retweet' && retweet.on}>
+          <Repeat2 />
+        </Icon>
         <Count n={retweet.count} />
       </ActionButton>
       <ActionButton
         label={like.on ? 'Unlike' : 'Like'}
         active={like.on}
-        activeClass="text-rose-600 dark:text-rose-400"
+        tone="rose"
         onClick={() => toggle('like', like, setLike)}
       >
-        <Heart className={cn('size-4', like.on && 'fill-current')} />
+        <Icon tone="rose" pop={popped === 'like' && like.on}>
+          <Heart className={cn(like.on && 'fill-current')} />
+        </Icon>
         <Count n={like.count} />
       </ActionButton>
-      <span className="w-12" aria-hidden />
+      <span className="w-16" aria-hidden />
     </div>
   );
 }
 
+const ACTION =
+  'group flex items-center gap-0.5 text-[13px] text-muted-foreground transition-colors';
+// Written out in full so Tailwind sees every class.
+const TONE = {
+  sky: 'hover:text-sky-500',
+  emerald: 'hover:text-emerald-500',
+  rose: 'hover:text-rose-500',
+};
+const CIRCLE = {
+  sky: 'group-hover:bg-sky-500/10',
+  emerald: 'group-hover:bg-emerald-500/10',
+  rose: 'group-hover:bg-rose-500/10',
+};
+const ACTIVE = {
+  sky: 'text-sky-500',
+  emerald: 'text-emerald-500',
+  rose: 'text-rose-500',
+};
+
 function ActionButton(props: {
   label: string;
   active: boolean;
-  activeClass: string;
+  tone: keyof typeof TONE;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -96,8 +126,9 @@ function ActionButton(props: {
       aria-pressed={props.active}
       onClick={props.onClick}
       className={cn(
-        'flex items-center gap-1 rounded-full p-2 text-sm transition-colors hover:text-foreground',
-        props.active && props.activeClass,
+        ACTION,
+        TONE[props.tone],
+        props.active && ACTIVE[props.tone],
       )}
     >
       {props.children}
@@ -105,9 +136,34 @@ function ActionButton(props: {
   );
 }
 
+// The round hover target around each icon. `pop` replays a small bounce
+// when an action turns on.
+function Icon({
+  children,
+  tone,
+  pop,
+}: {
+  children: React.ReactNode;
+  tone: keyof typeof TONE;
+  pop?: boolean;
+}) {
+  return (
+    <span
+      key={pop ? 'on' : 'off'}
+      className={cn(
+        'rounded-full p-2 transition-colors [&_svg]:size-[18px]',
+        CIRCLE[tone],
+        pop && 'motion-safe:animate-pop',
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 function Count({ n }: { n: number }) {
   return (
-    <span className="min-w-4 tabular-nums">
+    <span className="min-w-5 tabular-nums">
       {n > 0 ? n.toLocaleString('en') : ''}
     </span>
   );

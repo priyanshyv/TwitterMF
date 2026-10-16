@@ -5,6 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --animate-pop: pop 300ms ease-out;
   --font-heading: var(--font-geist-sans);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -126,5 +127,18 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* The little bounce when you like or retweet. */
+@keyframes pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
   }
 }

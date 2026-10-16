@@ -89,10 +89,10 @@ export function NotificationList({
           const { icon: Icon, color, verb } = KIND[n.type];
           const href = n.tweet ? tweetHref(n.tweet) : `/${n.actor.username}`;
           return (
-            <li key={n.id} className={cn(!n.read && 'bg-sky-500/5')}>
+            <li key={n.id} className={cn(!n.read && 'bg-sky-500/[0.06]')}>
               <Link
                 href={href}
-                className="flex gap-3 px-4 py-3 hover:bg-muted/50"
+                className="flex gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
               >
                 <Icon
                   className={cn(
@@ -104,10 +104,11 @@ export function NotificationList({
                 <div className="min-w-0 flex-1">
                   <UserAvatar
                     name={n.actor.displayName}
+                    seed={n.actor.username}
                     className="size-8 text-xs"
                   />
-                  <p className="mt-1.5 text-sm">
-                    <span className="font-semibold">{n.actor.displayName}</span>{' '}
+                  <p className="mt-2 text-[15px]">
+                    <span className="font-bold">{n.actor.displayName}</span>{' '}
                     {verb}
                     <span
                       className="text-muted-foreground"
@@ -118,7 +119,7 @@ export function NotificationList({
                     </span>
                   </p>
                   {n.tweet && (
-                    <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                    <p className="mt-1 line-clamp-2 text-[15px] text-muted-foreground">
                       {n.tweet.text}
                     </p>
                   )}

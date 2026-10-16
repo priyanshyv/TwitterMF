@@ -2,10 +2,8 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { RealtimeProvider } from '@/components/realtime-provider';
 import { ThemeProvider } from '@/components/theme-provider';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { Toaster } from '@/components/ui/sonner';
-import { UserNav } from '@/components/user-nav';
-import Link from 'next/link';
+import { MobileNav, SideNav } from '@/components/shell/navigation';
 import { Suspense } from 'react';
 import './globals.css';
 
@@ -41,22 +39,21 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           disableTransitionOnChange
         >
           <RealtimeProvider>
-            <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
-              <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
-                <Link href="/" className="text-lg font-semibold tracking-tight">
-                  TwitterMF
-                </Link>
-                <div className="flex items-center gap-1">
-                  {/* Reads cookies, so it renders per request; the rest of the
-                    header is static and ships instantly. */}
-                  <Suspense>
-                    <UserNav />
-                  </Suspense>
-                  <ThemeToggle />
-                </div>
+            <div className="mx-auto flex min-h-svh max-w-[1280px] justify-center pb-16 md:pb-0">
+              {/* The navigation reads cookies, so it renders per request
+                  inside Suspense; the page shell ships instantly. */}
+              <Suspense
+                fallback={<div className="hidden w-[72px] md:block xl:w-64" />}
+              >
+                <SideNav />
+              </Suspense>
+              <div className="min-w-0 flex-1 md:px-4">
+                <Suspense fallback={<div className="h-14 md:hidden" />}>
+                  <MobileNav />
+                </Suspense>
+                {children}
               </div>
-            </header>
-            {children}
+            </div>
           </RealtimeProvider>
           <Toaster position="bottom-center" />
         </ThemeProvider>

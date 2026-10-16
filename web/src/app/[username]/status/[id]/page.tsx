@@ -1,27 +1,22 @@
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import { ComposeBox } from '@/components/compose-box';
+import { Columns, PageHeader } from '@/components/shell/columns';
 import { TweetCard } from '@/components/tweet-card';
 import { TweetList } from '@/components/tweet-list';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WhoToFollow } from '@/components/who-to-follow';
 import { getMe, getReplies, getThread } from '@/lib/api/server';
 
 export default function TweetPage({
   params,
 }: PageProps<'/[username]/status/[id]'>) {
   return (
-    <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <Suspense fallback={<Skeleton className="h-72 rounded-xl" />}>
+    <Columns>
+      <PageHeader title="Post" back="/" />
+      <Suspense fallback={<Skeleton className="m-4 h-48" />}>
         <ThreadContent params={params} />
       </Suspense>
-      <aside className="min-w-0">
-        <Suspense fallback={<Skeleton className="h-64 rounded-xl" />}>
-          <WhoToFollow />
-        </Suspense>
-      </aside>
-    </div>
+    </Columns>
   );
 }
 
@@ -36,23 +31,22 @@ async function ThreadContent({ params }: { params: Promise<{ id: string }> }) {
   if (!thread || !replies) notFound();
 
   return (
-    <main className="min-w-0 rounded-xl border">
-      <h1 className="px-4 py-3 text-lg font-semibold">Post</h1>
-      <Separator />
+    <>
       {/* The conversation so far, oldest first, joined by a line. */}
       {thread.ancestors.map((t) => (
         <TweetCard key={t.id} tweet={t} connector />
       ))}
-      <TweetCard tweet={thread.tweet} large />
-      <Separator />
+      <div className="border-b">
+        <TweetCard tweet={thread.tweet} large />
+      </div>
       {me && (
-        <>
+        <div className="border-b">
           <ComposeBox
             displayName={me.displayName}
+            username={me.username}
             replyToId={thread.tweet.id}
           />
-          <Separator />
-        </>
+        </div>
       )}
       <TweetList
         key={replies.items[0]?.id ?? 'empty'}
@@ -60,6 +54,6 @@ async function ThreadContent({ params }: { params: Promise<{ id: string }> }) {
         endpoint={`/tweets/${thread.tweet.id}/replies`}
         empty="No replies yet."
       />
-    </main>
+    </>
   );
 }

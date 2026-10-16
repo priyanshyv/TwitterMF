@@ -41,7 +41,7 @@ export function TweetList({
 
   if (tweets.length === 0) {
     return (
-      <div className="px-4 py-12 text-center text-muted-foreground">
+      <div className="px-8 py-16 text-center text-[15px] text-muted-foreground">
         {empty}
       </div>
     );
