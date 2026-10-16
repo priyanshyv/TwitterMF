@@ -126,6 +126,26 @@ describe('home timeline: fan-out on write + hybrid', () => {
     });
   });
 
+  it('pages through a long timeline, reading the list in windows', async () => {
+    const alice = await signup(app, 'alice');
+    await texts(alice.cookie); // warm
+    // 45 tweets with limit 5: later pages must scan past the first window.
+    for (let i = 1; i <= 45; i++) await tweet(alice.cookie, `t${i}`);
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const url: string = `/timeline?limit=5${cursor ? `&before=${cursor}` : ''}`;
+      const page = (await as(alice.cookie).get(url)).json();
+      seen.push(
+        ...page.items.map((i: { tweet: { text: string } }) => i.tweet.text),
+      );
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(seen).toEqual(Array.from({ length: 45 }, (_, i) => `t${45 - i}`));
+  });
+
   it('shows a duplicated ID only once (jobs can run twice)', async () => {
     const alice = await signup(app, 'alice');
     const t = await tweet(alice.cookie, 'once');

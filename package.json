@@ -32,7 +32,8 @@
     "db:seed": "npm run db:seed --silent -w api --",
     "counters:reconcile": "npm run counters:reconcile --silent -w api",
     "dev:stop": "node scripts/dev-stop.mjs",
-    "jobs": "npm run jobs --silent -w api --"
+    "jobs": "npm run jobs --silent -w api --",
+    "lab:fanout": "npm run lab:fanout --silent -w api"
   },
   "devDependencies": {
     "prettier": "^3.9.10"

@@ -27,7 +27,8 @@
     "counters:reconcile": "tsx scripts/reconcile-counters.ts",
     "jobs": "tsx scripts/jobs.ts",
     "worker": "node dist/worker",
-    "worker:dev": "tsx watch --clear-screen=false src/worker.ts"
+    "worker:dev": "tsx watch --clear-screen=false src/worker.ts",
+    "lab:fanout": "tsx scripts/fanout-experiment.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",
