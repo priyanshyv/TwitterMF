@@ -3,6 +3,7 @@ import { ACCESS_COOKIE, SERVER_API_URL } from './config';
 import type {
   FeedItem,
   HealthReport,
+  NotificationItem,
   Page,
   Profile,
   Suggestion,
@@ -58,6 +59,16 @@ export function getUserTweets(
   username: string,
 ): Promise<Page<FeedItem> | null> {
   return get<Page<FeedItem>>(`/users/${encodeURIComponent(username)}/tweets`);
+}
+
+export function getNotifications(): Promise<Page<NotificationItem> | null> {
+  return get<Page<NotificationItem>>('/notifications');
+}
+
+export async function getUnreadCount(): Promise<number> {
+  return (
+    (await get<{ unread: number }>('/notifications/unread-count'))?.unread ?? 0
+  );
 }
 
 export async function getSuggestions(): Promise<Suggestion[]> {

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
+import { RealtimeProvider } from '@/components/realtime-provider';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Toaster } from '@/components/ui/sonner';
@@ -39,22 +40,24 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           enableSystem
           disableTransitionOnChange
         >
-          <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
-            <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
-              <Link href="/" className="text-lg font-semibold tracking-tight">
-                TwitterMF
-              </Link>
-              <div className="flex items-center gap-1">
-                {/* Reads cookies, so it renders per request; the rest of the
+          <RealtimeProvider>
+            <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
+              <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
+                <Link href="/" className="text-lg font-semibold tracking-tight">
+                  TwitterMF
+                </Link>
+                <div className="flex items-center gap-1">
+                  {/* Reads cookies, so it renders per request; the rest of the
                     header is static and ships instantly. */}
-                <Suspense>
-                  <UserNav />
-                </Suspense>
-                <ThemeToggle />
+                  <Suspense>
+                    <UserNav />
+                  </Suspense>
+                  <ThemeToggle />
+                </div>
               </div>
-            </div>
-          </header>
-          {children}
+            </header>
+            {children}
+          </RealtimeProvider>
           <Toaster position="bottom-center" />
         </ThemeProvider>
       </body>

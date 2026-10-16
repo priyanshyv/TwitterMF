@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { ComposeBox } from '@/components/compose-box';
+import { NewPostsBanner } from '@/components/new-posts-banner';
 import { TweetList } from '@/components/tweet-list';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -28,6 +29,7 @@ async function HomeContent() {
         <Separator />
         <ComposeBox displayName={me.displayName} />
         <Separator />
+        <NewPostsBanner />
         <TweetList
           // A new first tweet (after posting) remounts the list with fresh data.
           key={timeline.items[0]?.id ?? 'empty'}

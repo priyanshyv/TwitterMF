@@ -66,3 +66,21 @@ export interface UsernameAvailability {
   available: boolean;
   checkedBy: 'bloom' | 'database';
 }
+
+export type NotificationType =
+  'follow' | 'like' | 'retweet' | 'reply' | 'mention';
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  createdAt: string;
+  read: boolean;
+  actor: UserRef;
+  tweet: { id: string; text: string; author: UserRef } | null;
+}
+
+// Pushed by the API over the WebSocket.
+export type RealtimeEvent =
+  | { type: 'hello' }
+  | { type: 'notification'; unread: number }
+  | { type: 'timeline'; tweetId: string; authorId: string };

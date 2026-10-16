@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { getMe } from '@/lib/api/server';
+import { getMe, getUnreadCount } from '@/lib/api/server';
+import { NotificationBell } from './notification-bell';
 import { LogoutButton } from './logout-button';
 import { UserAvatar } from './user-avatar';
 
@@ -22,8 +23,10 @@ export async function UserNav() {
       </div>
     );
   }
+  const unread = await getUnreadCount().catch(() => 0);
   return (
     <div className="flex items-center gap-1">
+      <NotificationBell initialUnread={unread} />
       <Link
         href={`/${me.username}`}
         className="flex items-center gap-2 rounded-full py-1 pr-3 pl-1 hover:bg-muted"

@@ -3,8 +3,8 @@ import Link from 'next/link';
 import type { FeedItem, Tweet } from '@/lib/api/types';
 import { relativeTime } from '@/lib/format';
 import { tweetHref } from '@/lib/links';
-import { cn } from '@/lib/utils';
 import { TweetActions } from './tweet-actions';
+import { TweetText } from './tweet-text';
 import { UserAvatar } from './user-avatar';
 
 export function FeedItemCard({ item }: { item: FeedItem }) {
@@ -92,16 +92,7 @@ export function TweetCard({
               </Link>
             </p>
           )}
-          <Link href={tweetHref(tweet)} className="block">
-            <p
-              className={cn(
-                'mt-0.5 break-words whitespace-pre-wrap',
-                large && 'text-xl leading-snug',
-              )}
-            >
-              {tweet.text}
-            </p>
-          </Link>
+          <TweetText text={tweet.text} href={tweetHref(tweet)} large={large} />
           <TweetActions tweet={tweet} />
         </div>
       </div>
