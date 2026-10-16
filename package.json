@@ -31,7 +31,8 @@
     "lab:ratelimit": "npm run lab:ratelimit --silent -w api",
     "db:seed": "npm run db:seed --silent -w api --",
     "counters:reconcile": "npm run counters:reconcile --silent -w api",
-    "dev:stop": "node scripts/dev-stop.mjs"
+    "dev:stop": "node scripts/dev-stop.mjs",
+    "jobs": "npm run jobs --silent -w api --"
   },
   "devDependencies": {
     "prettier": "^3.9.10"

@@ -17,11 +17,15 @@ const NOISE = [
   /Partial Prefetching enabled/,
   /Starting compilation in watch mode/,
   /File change detected/,
+  /^\[tsx\]/,
 ];
 
 const APPS = [
-  { name: 'api', color: 'cyan', workspace: 'api' },
-  { name: 'web', color: 'magenta', workspace: 'web' },
+  { name: 'api', color: 'cyan', workspace: 'api', script: 'dev' },
+  { name: 'web', color: 'magenta', workspace: 'web', script: 'dev' },
+  // Background jobs (fan-out, notifications): a separate process, so slow
+  // jobs never slow down requests.
+  { name: 'job', color: 'yellow', workspace: 'api', script: 'worker:dev' },
 ];
 
 const dim = (s) => styleText('dim', s);
@@ -88,10 +92,14 @@ const children = [];
 //    that isn't up yet. FORCE_COLOR keeps their colors even though their
 //    output is piped through this script.
 function start(app) {
-  const child = spawn('npm', ['run', 'dev', '--silent', '-w', app.workspace], {
-    env: { ...process.env, FORCE_COLOR: '1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const child = spawn(
+    'npm',
+    ['run', app.script, '--silent', '-w', app.workspace],
+    {
+      env: { ...process.env, FORCE_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
   const prefix = `${styleText(app.color, app.name)} ${dim('│')} `;
   for (const stream of [child.stdout, child.stderr]) {
     createInterface({ input: stream }).on('line', (line) => {
@@ -131,10 +139,12 @@ async function waitForApi(api, timeoutMs = 90_000) {
   return false;
 }
 
-const [apiApp, webApp] = APPS;
+const [apiApp, webApp, workerApp] = APPS;
 const api = start(apiApp);
-if (await waitForApi(api)) start(webApp);
-else if (!stopping) {
+if (await waitForApi(api)) {
+  start(webApp);
+  start(workerApp);
+} else if (!stopping) {
   console.log(
     `\n${styleText('red', '✗')} The API didn't come up within 90 s; see its output above.`,
   );

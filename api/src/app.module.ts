@@ -8,6 +8,9 @@ import { CountersModule } from './counters/counters.module.js';
 import { loggerOptions } from './config/logger.js';
 import { DbModule } from './db/db.module.js';
 import { HealthModule } from './health/health.module.js';
+import { JobsModule } from './jobs/jobs.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import { RealtimeModule } from './realtime/realtime.module.js';
 import { RateLimitModule } from './rate-limit/rate-limit.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { TweetsModule } from './tweets/tweets.module.js';
@@ -23,10 +26,13 @@ import { UsersModule } from './users/users.module.js';
     CacheModule,
     CountersModule,
     RateLimitModule,
+    JobsModule,
+    RealtimeModule,
     HealthModule,
     AuthModule,
     UsersModule,
     TweetsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

@@ -24,6 +24,7 @@ describe('GET /health', () => {
       ping: () => Promise.reject(new Error('connection refused')),
       quit: () => Promise.resolve('OK'),
       on: () => brokenRedis,
+      duplicate: () => brokenRedis, // the WebSocket gateway's subscriber
     };
     app = await createTestApp((b) =>
       b.overrideProvider(REDIS).useValue(brokenRedis),

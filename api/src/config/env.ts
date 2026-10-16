@@ -26,6 +26,11 @@ const EnvSchema = z.object({
   // How often pending counter changes move from Redis to Postgres. 0 turns
   // the timer off (tests flush by hand).
   COUNTER_FLUSH_INTERVAL_MS: z.coerce.number().int().min(0).default(60_000),
+  // Authors with at least this many followers are not fanned out on write;
+  // their tweets are merged into timelines at read time instead (hybrid).
+  FANOUT_MAX_FOLLOWERS: z.coerce.number().int().min(1).default(10_000),
+  // First retry delay for background jobs; doubles each attempt.
+  JOB_BACKOFF_MS: z.coerce.number().int().min(1).default(1_000),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
     .default('info'),

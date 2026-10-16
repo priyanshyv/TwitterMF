@@ -4,6 +4,7 @@ import {
   check,
   index,
   integer,
+  pgEnum,
   type AnyPgColumn,
   pgTable,
   primaryKey,
@@ -145,6 +146,54 @@ export const refreshTokens = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index('refresh_tokens_family_id_idx').on(t.familyId)],
+);
+
+export const notificationType = pgEnum('notification_type', [
+  'follow',
+  'like',
+  'retweet',
+  'reply',
+  'mention',
+]);
+
+// "Alice liked your post". Written by the worker, never in the request.
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: id('id').primaryKey(),
+    // Who gets told.
+    userId: id('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: notificationType('type').notNull(),
+    // Who did it.
+    actorId: id('actor_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // The tweet involved: the one liked or retweeted, or the reply/mention.
+    tweetId: id('tweet_id').references(() => tweets.id, {
+      onDelete: 'cascade',
+    }),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // The notifications page: mine, newest first.
+    index('notifications_user_id_id_idx').on(t.userId, t.id.desc()),
+    // The bell's unread count, from a small partial index.
+    index('notifications_unread_idx')
+      .on(t.userId)
+      .where(sql`${t.readAt} is null`),
+    // One notification per (who, what, by whom, which tweet). Like, unlike,
+    // like again doesn't notify twice, and a job that runs twice (queues
+    // deliver at least once) can't create a duplicate.
+    uniqueIndex('notifications_dedupe_idx').on(
+      t.userId,
+      t.type,
+      t.actorId,
+      sql`coalesce(${t.tweetId}, 0)`,
+    ),
+  ],
 );
 
 export type User = typeof users.$inferSelect;

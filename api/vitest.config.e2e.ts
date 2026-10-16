@@ -21,6 +21,8 @@ export default defineConfig({
       COUNTER_FLUSH_INTERVAL_MS: '0',
       // rate-limit.e2e-spec.ts turns limits back on for its own app.
       RATE_LIMIT_ENABLED: 'false',
+      // Retries 10, 20, 40… ms instead of 1, 2, 4… s.
+      JOB_BACKOFF_MS: '10',
     },
   },
 });

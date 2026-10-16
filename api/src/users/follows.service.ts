@@ -3,12 +3,16 @@ import { and, eq, sql } from 'drizzle-orm';
 import { CountersService } from '../counters/counters.service.js';
 import { DB, type Database } from '../db/db.module.js';
 import { follows } from '../db/schema/index.js';
+import { JobsService } from '../jobs/jobs.module.js';
+import { TimelineService } from '../timeline/timeline.service.js';
 
 @Injectable()
 export class FollowsService {
   constructor(
     @Inject(DB) private readonly db: Database,
     @Inject(CountersService) private readonly counters: CountersService,
+    @Inject(TimelineService) private readonly timelines: TimelineService,
+    @Inject(JobsService) private readonly jobs: JobsService,
   ) {}
 
   async follow(followerId: bigint, followeeId: bigint): Promise<void> {
@@ -22,7 +26,15 @@ export class FollowsService {
       .values({ followerId, followeeId })
       .onConflictDoNothing()
       .returning({ id: follows.followeeId });
-    if (inserted.length) await this.countFollow(followerId, followeeId, 1);
+    if (inserted.length) {
+      await this.countFollow(followerId, followeeId, 1);
+      await this.timelines.invalidate(followerId); // now includes their tweets
+      await this.jobs.notify({
+        kind: 'follow',
+        actorId: `${followerId}`,
+        followeeId: `${followeeId}`,
+      });
+    }
   }
 
   async unfollow(followerId: bigint, followeeId: bigint): Promise<void> {
@@ -35,7 +47,10 @@ export class FollowsService {
         ),
       )
       .returning({ id: follows.followeeId });
-    if (deleted.length) await this.countFollow(followerId, followeeId, -1);
+    if (deleted.length) {
+      await this.countFollow(followerId, followeeId, -1);
+      await this.timelines.invalidate(followerId); // drop their tweets
+    }
   }
 
   private countFollow(followerId: bigint, followeeId: bigint, by: number) {

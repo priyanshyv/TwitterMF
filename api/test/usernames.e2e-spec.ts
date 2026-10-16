@@ -91,6 +91,7 @@ describe('username availability when Redis is down', () => {
       flushdb: () => Promise.resolve('OK'),
       quit: () => Promise.resolve('OK'),
       on: () => deadRedis,
+      duplicate: () => deadRedis, // the WebSocket gateway's subscriber
     };
     app = await createTestApp((b) =>
       b.overrideProvider(REDIS).useValue(deadRedis),

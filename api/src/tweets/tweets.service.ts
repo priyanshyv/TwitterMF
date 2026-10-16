@@ -10,7 +10,9 @@ import {
   type CounterChange,
 } from '../counters/counters.service.js';
 import { DB, type Database } from '../db/db.module.js';
+import { JobsService } from '../jobs/jobs.module.js';
 import { likes, tweets } from '../db/schema/index.js';
+import { TimelineService } from '../timeline/timeline.service.js';
 import {
   toUserRef,
   UserRecordsService,
@@ -36,6 +38,8 @@ export class TweetsService {
     @Inject(CACHE) private readonly cache: RedisCache,
     @Inject(CountersService) private readonly counters: CountersService,
     @Inject(UserRecordsService) private readonly users: UserRecordsService,
+    @Inject(TimelineService) private readonly timelines: TimelineService,
+    @Inject(JobsService) private readonly jobs: JobsService,
   ) {}
 
   // ---- Writes ------------------------------------------------------------
@@ -58,6 +62,13 @@ export class TweetsService {
     if (parentId)
       changes.push({ entity: 'tweet', id: parentId, field: 'replies', by: 1 });
     await this.counters.change(changes);
+    await this.published(authorId, id);
+    // Replies and @mentions become notifications, in the worker.
+    await this.jobs.notify({
+      kind: 'tweet',
+      actorId: `${authorId}`,
+      tweetId: `${id}`,
+    });
     return this.view(id, authorId);
   }
 
@@ -70,10 +81,16 @@ export class TweetsService {
       .values({ userId, tweetId: target })
       .onConflictDoNothing()
       .returning({ id: likes.tweetId });
-    if (inserted.length)
+    if (inserted.length) {
       await this.counters.change([
         { entity: 'tweet', id: target, field: 'likes', by: 1 },
       ]);
+      await this.jobs.notify({
+        kind: 'like',
+        actorId: `${userId}`,
+        tweetId: `${target}`,
+      });
+    }
     return this.view(target, userId);
   }
 
@@ -104,11 +121,19 @@ export class TweetsService {
       })
       .onConflictDoNothing()
       .returning({ id: tweets.id });
-    if (inserted.length)
+    if (inserted.length) {
       await this.counters.change([
         { entity: 'tweet', id: target, field: 'retweets', by: 1 },
         { entity: 'user', id: userId, field: 'tweets', by: 1 },
       ]);
+      // The retweet row goes into the retweeter's followers' timelines.
+      await this.published(userId, inserted[0].id);
+      await this.jobs.notify({
+        kind: 'retweet',
+        actorId: `${userId}`,
+        tweetId: `${target}`,
+      });
+    }
     return this.view(target, userId);
   }
 
@@ -147,35 +172,15 @@ export class TweetsService {
     return this.page(rows, page.limit, viewerId);
   }
 
-  // Home timeline v1, "fan-out on read": built at request time from the
-  // tweets of everyone you follow, plus your own.
-  //
-  // The LATERAL join takes each followed account's newest tweets straight
-  // from the (author_id, id desc) index, then merges them. The obvious
-  // "author_id IN (...) ORDER BY id" walks every recent tweet on the site
-  // instead; `npm run lab:explain` shows the difference (~30x at 1M tweets).
-  //
-  // Cost grows with how many accounts you follow, which is why Phase 4
-  // switches to fan-out on write.
+  // The home timeline: precomputed per user in Redis (fan-out on write),
+  // with big accounts merged in at read time. See timeline.service.ts.
   async timeline(userId: bigint, page: PageQuery): Promise<Page<FeedItem>> {
-    const n = page.limit + 1;
-    const { rows } = await this.db.execute<{ id: string }>(sql`
-      with sources as (
-        select followee_id as author_id from follows where follower_id = ${userId}
-        union all
-        select ${userId}::bigint
-      )
-      select t.id
-      from sources s
-      cross join lateral (
-        select id from tweets
-        where author_id = s.author_id ${olderThan(page.before)}
-        order by id desc
-        limit ${n}
-      ) t
-      order by t.id desc
-      limit ${n}`);
-    return this.page(rows, page.limit, userId);
+    const ids = await this.timelines.page(userId, page.before, page.limit);
+    return this.page(
+      ids.map((id) => ({ id: id.toString() })),
+      page.limit,
+      userId,
+    );
   }
 
   // A tweet plus the chain of tweets it replies to, oldest first.
@@ -214,6 +219,16 @@ export class TweetsService {
       order by id desc
       limit ${page.limit + 1}`);
     return this.page(rows, page.limit, viewerId);
+  }
+
+  // A new row in the author's own timeline right away (so you see your own
+  // tweet immediately: read-your-writes), and in followers' timelines via
+  // the worker.
+  private async published(authorId: bigint, rowId: bigint) {
+    await this.timelines
+      .push([authorId.toString()], rowId.toString())
+      .catch(() => undefined); // cold or unavailable: rebuilt on next read
+    await this.jobs.fanout({ tweetId: `${rowId}`, authorId: `${authorId}` });
   }
 
   // ---- Hydration ---------------------------------------------------------
@@ -319,8 +334,9 @@ export class TweetsService {
     return items;
   }
 
-  // Tweet rows by ID, cache-aside.
-  private async records(ids: string[]): Promise<Map<string, TweetRecord>> {
+  // Tweet rows by ID, cache-aside. Public for other features that show
+  // tweets (notifications).
+  async records(ids: string[]): Promise<Map<string, TweetRecord>> {
     const cached = await this.cache.getMany<TweetRecord>(
       [...new Set(ids)].map(tweetCacheKey),
       TWEET_TTL_SECONDS,

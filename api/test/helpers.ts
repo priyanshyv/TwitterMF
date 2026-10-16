@@ -6,15 +6,23 @@ import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import { sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { AppModule } from '../src/app.module.js';
+import { QUEUES, type Queues } from '../src/jobs/jobs.module.js';
+import { WorkerModule } from '../src/worker/worker.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { ENV } from '../src/config/config.module.js';
 import { DB, type Database } from '../src/db/db.module.js';
 import { REDIS } from '../src/redis/redis.module.js';
 
+// By default the app also runs the queue workers in-process, like a worker
+// process would, so tests exercise the real background path; call settle()
+// to wait for queued jobs.
 export async function createTestApp(
   override?: (builder: TestingModuleBuilder) => void,
+  { workers = true }: { workers?: boolean } = {},
 ) {
-  const builder = Test.createTestingModule({ imports: [AppModule] });
+  const builder = Test.createTestingModule({
+    imports: [workers ? WorkerModule : AppModule],
+  });
   override?.(builder);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(
@@ -32,7 +40,7 @@ export async function resetData(app: NestFastifyApplication) {
   await app
     .get<Database>(DB)
     .execute(
-      sql`truncate users, tweets, follows, likes, refresh_tokens cascade`,
+      sql`truncate users, tweets, follows, likes, refresh_tokens, notifications cascade`,
     );
   await app.get<Redis>(REDIS).flushdb();
 }
@@ -66,4 +74,29 @@ export async function signup(
     cookie: cookiesFrom(res),
     user: res.json<{ user: { id: string; username: string } }>().user,
   };
+}
+
+// Waits until every queue has nothing waiting, running or scheduled.
+export async function settle(app: NestFastifyApplication, timeoutMs = 10_000) {
+  const queues = app.get<Queues>(QUEUES);
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const counts = await Promise.all(
+      [queues.fanout, queues.notifications].map((q) =>
+        q.getJobCounts(
+          'waiting',
+          'active',
+          'delayed',
+          'prioritized',
+          'waiting-children',
+        ),
+      ),
+    );
+    if (counts.every((c) => Object.values(c).every((n) => n === 0))) return;
+    if (Date.now() > deadline)
+      throw new Error(
+        `jobs still pending after ${timeoutMs} ms: ${JSON.stringify(counts)}`,
+      );
+    await new Promise((r) => setTimeout(r, 20));
+  }
 }
