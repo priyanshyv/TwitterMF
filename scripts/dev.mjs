@@ -3,6 +3,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { styleText } from 'node:util';
+import { devRunnerAbove, isPortFree, PORTS, portHolder } from './dev-lib.mjs';
 
 const COMPOSE = ['compose', '-f', 'infra/docker-compose.yml'];
 
@@ -29,6 +30,24 @@ function fail(message, details = '') {
   console.error(`\n${styleText('red', '✗')} ${message}`);
   if (details) console.error(dim(details.trim()));
   process.exit(1);
+}
+
+// 0. The ports must be free. The usual reason they aren't: npm run dev is
+//    already running in another terminal tab.
+for (const [name, port] of Object.entries(PORTS)) {
+  if (await isPortFree(port)) continue;
+  const holder = portHolder(port);
+  const runner = holder && devRunnerAbove(holder.pid);
+  if (runner)
+    fail(
+      `npm run dev is already running (pid ${runner.pid}, terminal ${runner.tty}, started ${runner.started}).\n` +
+        `  Use it at http://localhost:${PORTS.web}, or stop it with: npm run dev:stop`,
+    );
+  fail(
+    `Port ${port} (${name}) is already in use` +
+      (holder ? ` by pid ${holder.pid}:\n  ${holder.command}` : '.') +
+      `\n  Stop that process, then run npm run dev again.`,
+  );
 }
 
 // 1. Docker must be running before anything else.
@@ -61,10 +80,14 @@ if (migrate.status !== 0)
 console.log(`${styleText('green', '✓')}\n`);
 
 let stopping = false;
+const children = [];
 
-// 4. API and web side by side. FORCE_COLOR keeps their colors even though
-//    their output is piped through this script.
-const children = APPS.map((app) => {
+// 4. The API first, then the web app once the API answers /health. Next.js
+//    is ready in a fraction of a second while Nest compiles for a few, so
+//    starting both at once means an open browser tab reloads against an API
+//    that isn't up yet. FORCE_COLOR keeps their colors even though their
+//    output is piped through this script.
+function start(app) {
   const child = spawn('npm', ['run', 'dev', '--silent', '-w', app.workspace], {
     env: { ...process.env, FORCE_COLOR: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -88,16 +111,47 @@ const children = APPS.map((app) => {
     stopAll();
     process.exitCode = code ?? 1;
   });
+  children.push(child);
   return child;
-});
+}
+
+async function waitForApi(api, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!stopping && api.exitCode === null && Date.now() < deadline) {
+    try {
+      // Any answer counts, even 503: the server is up and listening.
+      await fetch(`http://localhost:${PORTS.api}/health`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      return true;
+    } catch {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  return false;
+}
+
+const [apiApp, webApp] = APPS;
+const api = start(apiApp);
+if (await waitForApi(api)) start(webApp);
+else if (!stopping) {
+  console.log(
+    `\n${styleText('red', '✗')} The API didn't come up within 90 s; see its output above.`,
+  );
+  stopping = true;
+  stopAll();
+  process.exitCode = 1;
+}
 
 function stopAll() {
   for (const child of children)
     if (child.exitCode === null) child.kill('SIGTERM');
 }
 
-// Ctrl+C: let each app shut down gracefully (closes DB connections), then exit.
-for (const signal of ['SIGINT', 'SIGTERM']) {
+// Ctrl+C (or the terminal tab closing, SIGHUP): let each app shut down
+// gracefully (closes DB connections), then exit. Without SIGHUP, closing the
+// tab could leave the apps running in the background, holding the ports.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
     if (stopping) return;
     stopping = true;

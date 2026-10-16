@@ -5,7 +5,11 @@ import { LogoutButton } from './logout-button';
 import { UserAvatar } from './user-avatar';
 
 export async function UserNav() {
-  const me = await getMe();
+  // The header is part of the root layout, outside app/error.tsx's reach: if
+  // it threw, the whole app would fail. When the API is unreachable, leave
+  // the user menu out and let the page's own error boundary explain.
+  const me = await getMe().catch(() => undefined);
+  if (me === undefined) return null;
   if (!me) {
     return (
       <div className="flex items-center gap-2">

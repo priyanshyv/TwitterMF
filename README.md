@@ -35,6 +35,7 @@ To get a populated network to play with, run `npm run db:seed` and log in as **d
 | Command                                                                | What it does                                                                         |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `npm run dev`                                                          | Infra up, then API (watch mode) and web together                                     |
+| `npm run dev:stop`                                                     | Stop a running `npm run dev` (e.g. one left open in another terminal)                |
 | `npm run infra:up` / `infra:down`                                      | Start / stop Postgres and Redis                                                      |
 | `npm run infra:reset`                                                  | Stop and **delete** local DB and Redis data                                          |
 | `npm run lint` / `typecheck` / `build`                                 | Checks for both apps (CI runs these)                                                 |

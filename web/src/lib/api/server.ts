@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { SERVER_API_URL } from './config';
+import { ACCESS_COOKIE, SERVER_API_URL } from './config';
 import type {
   FeedItem,
   HealthReport,
@@ -14,10 +14,17 @@ import type {
 // forwarded, so the API sees the same logged-in user.
 async function get<T>(path: string): Promise<T | null> {
   const cookieHeader = (await cookies()).toString();
-  const res = await fetch(`${SERVER_API_URL}${path}`, {
-    headers: { cookie: cookieHeader },
-    signal: AbortSignal.timeout(3_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${SERVER_API_URL}${path}`, {
+      headers: { cookie: cookieHeader },
+      signal: AbortSignal.timeout(3_000),
+    });
+  } catch {
+    // Down, restarting, or too slow: one clear line instead of a stack of
+    // ECONNREFUSED errors. app/error.tsx shows the visitor a retry button.
+    throw new Error(`API unreachable at ${SERVER_API_URL} (GET ${path})`);
+  }
   // 401: not logged in. 400/404: no such user (or a name that can't exist).
   if ([400, 401, 404].includes(res.status)) return null;
   if (!res.ok) throw new Error(`API ${path} failed with ${res.status}`);
@@ -25,6 +32,9 @@ async function get<T>(path: string): Promise<T | null> {
 }
 
 export async function getMe(): Promise<User | null> {
+  // No access token means logged out (proxy.ts already swapped an expiring
+  // one for a fresh one), so skip a request that can only answer 401.
+  if (!(await cookies()).has(ACCESS_COOKIE)) return null;
   return (await get<{ user: User }>('/auth/me'))?.user ?? null;
 }
 

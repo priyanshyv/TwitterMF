@@ -37,6 +37,7 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 ```bash
 npm run setup        # install + create api/.env and web/.env.local from examples
 npm run dev          # scripts/dev.mjs: checks Docker, starts infra, then api + web with short prefixed logs
+npm run dev:stop     # stops a running npm run dev from this repo, from any terminal (graceful SIGINT)
 npm run infra:up | infra:down | infra:reset   # reset deletes local data
 npm run lint && npm run typecheck && npm run build && npm test && npm run test:e2e
 npm run db:generate | db:migrate | db:studio
@@ -84,6 +85,8 @@ Run the full check line above before every commit; CI runs the same steps.
 - Headless Chrome screenshots: windows can't go below ~500px wide, so a narrower "phone" screenshot looks cropped. Use 500px.
 - pino-http's `autoLogging.ignore` doesn't work under Nest; use nestjs-pino's `exclude` instead.
 - Docker Desktop must be running before `npm run dev` (the dev script checks and says so).
+- `npm run dev` refuses to start if ports 4000/3001 are taken and names the culprit; usually an old `npm run dev` in another terminal tab (`npm run dev:stop`). It starts the API first and the web app only once `/health` answers, so open tabs don't hit a half-started API.
+- The header (`UserNav`) lives in the root layout, which `app/error.tsx` can't catch; it must never throw. Page-level fetch failures surface as "API unreachable at ..." and render `app/error.tsx` (Next 16 passes `retry`, not `reset`). In dev, Next's overlay sits on top of it.
 - Dev log output is kept minimal on purpose: `scripts/dev.mjs` filters known banner noise (`NOISE` list), and `api/src/config/logger.ts` hides Nest's boot chatter in dev only. Production logs stay full JSON.
 - pino crashes on `hooks: undefined`; add optional pino options with a conditional spread. Vitest runs with `NODE_ENV=test`, which catches this.
 - The ioredis client needs an `error` listener, or every reconnect attempt prints an unhandled error (see `redis.module.ts`).
