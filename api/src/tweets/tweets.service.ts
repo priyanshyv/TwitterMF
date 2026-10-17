@@ -71,6 +71,9 @@ export class TweetsService {
           actorId: `${authorId}`,
           tweetId: `${id}`,
         }),
+        // Searchable and counted toward trending, also via the worker.
+        message.search({ kind: 'tweet', id: `${id}` }),
+        message.search({ kind: 'trend', tweetId: `${id}` }),
       ]);
     });
 
@@ -268,6 +271,11 @@ export class TweetsService {
       ),
       nextCursor: page.nextCursor,
     };
+  }
+
+  // Feed items for arbitrary tweet IDs (search results).
+  items(ids: string[], viewerId?: bigint): Promise<FeedItem[]> {
+    return this.hydrate(ids, viewerId);
   }
 
   private async view(id: bigint, viewerId?: bigint): Promise<TweetView> {

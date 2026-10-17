@@ -43,6 +43,13 @@
       "when": 1792270860379,
       "tag": "0005_media",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792271106549,
+      "tag": "0006_search_trigram",
+      "breakpoints": true
     }
   ]
 }

@@ -54,6 +54,13 @@ export const POLICIES = {
     refillPerMinute: 20,
     key: 'user',
   },
+  // Search: bursts of 30, then one a second, per address.
+  search: {
+    algorithm: 'token-bucket',
+    capacity: 30,
+    refillPerMinute: 60,
+    key: 'ip',
+  },
   // The sign-up form checks names as you type.
   'username-check': {
     algorithm: 'token-bucket',

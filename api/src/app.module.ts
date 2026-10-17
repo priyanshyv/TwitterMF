@@ -15,6 +15,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { RateLimitModule } from './rate-limit/rate-limit.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { SearchModule } from './search/search.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { TweetsModule } from './tweets/tweets.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -39,6 +40,7 @@ import { UsersModule } from './users/users.module.js';
     TweetsModule,
     NotificationsModule,
     MediaModule,
+    SearchModule,
   ],
 })
 export class AppModule {}

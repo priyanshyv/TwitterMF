@@ -76,15 +76,23 @@ export class MediaProcessor {
     for (const out of outputs)
       await this.storage.put(out.key, out.data, 'image/webp');
     const [large] = outputs;
-    await this.db
+    // RETURNING the tweet ID as it is NOW: the image may have been attached
+    // to a tweet while we were resizing it (the row read above is stale).
+    const [done] = await this.db
       .update(media)
       .set({ status: 'ready', width: large.width, height: large.height })
-      .where(eq(media.id, id));
+      .where(eq(media.id, id))
+      .returning({ tweetId: media.tweetId });
     await this.storage.delete(uploadKey(job.mediaId)); // the original, EXIF and all
 
-    // A tweet already showing this image as "processing" must reload it.
-    if (row.tweetId)
-      await this.cache.invalidate([`cache:tweet:${row.tweetId}`]);
+    // A tweet cached while this image was "processing" must reload it. Once
+    // now, and once more shortly after, in case a reader cached the old
+    // state in between (the same delayed double delete as counters).
+    if (done?.tweetId) {
+      const keys = [`cache:tweet:${done.tweetId}`];
+      await this.cache.invalidate(keys);
+      setTimeout(() => void this.cache.invalidate(keys), 2_000).unref();
+    }
     return { status: 'ready' };
   }
 }

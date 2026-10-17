@@ -22,6 +22,8 @@ import { CountersService } from '../src/counters/counters.service.js';
 import { DB, type Database } from '../src/db/db.module.js';
 import { follows, likes, tweets, users } from '../src/db/schema/index.js';
 import { REDIS } from '../src/redis/redis.module.js';
+import { SearchService } from '../src/search/search.service.js';
+import { TrendsService } from '../src/search/trends.service.js';
 import { UsernamesService } from '../src/usernames/usernames.service.js';
 
 const USERS = 60;
@@ -296,6 +298,9 @@ await insertInBatches(likeRows, (rows) => db.insert(likes).values(rows));
 console.log('Computing counts and rebuilding the username bloom filter…');
 await app.get(CountersService).reconcile();
 await app.get(UsernamesService).rebuild();
+console.log('Indexing for search and trending…');
+await app.get(SearchService).reindexAll();
+await app.get(TrendsService).rebuild();
 
 console.log(`
 Done. Log in at http://localhost:3001/login

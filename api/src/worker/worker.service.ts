@@ -14,9 +14,11 @@ import {
   type FanoutJob,
   type MediaJob,
   type NotificationJob,
+  type SearchJob,
   type QueueName,
 } from '../jobs/queues.js';
 import { MediaProcessor } from '../media/media.processor.js';
+import { SearchProcessor } from '../search/search.processor.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { FanoutProcessor } from '../timeline/fanout.processor.js';
 
@@ -34,6 +36,7 @@ export class WorkerService implements OnModuleInit, BeforeApplicationShutdown {
     @Inject(NotificationsService)
     private readonly notifications: NotificationsService,
     @Inject(MediaProcessor) private readonly media: MediaProcessor,
+    @Inject(SearchProcessor) private readonly search: SearchProcessor,
   ) {}
 
   onModuleInit() {
@@ -45,6 +48,9 @@ export class WorkerService implements OnModuleInit, BeforeApplicationShutdown {
     );
     // Image work is CPU-heavy; a few at a time per worker process.
     this.start<MediaJob>(QUEUE.media, 2, (job) => this.media.process(job.data));
+    this.start<SearchJob>(QUEUE.search, 5, (job) =>
+      this.search.process(job.data),
+    );
   }
 
   private start<T>(

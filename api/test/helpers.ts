@@ -8,6 +8,7 @@ import type { Redis } from 'ioredis';
 import { AppModule } from '../src/app.module.js';
 import { QUEUES, type Queues } from '../src/jobs/jobs.module.js';
 import { OutboxRelay } from '../src/jobs/outbox.relay.js';
+import { SearchService } from '../src/search/search.service.js';
 import { WorkerModule } from '../src/worker/worker.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { ENV } from '../src/config/config.module.js';
@@ -44,6 +45,11 @@ export async function resetData(app: NestFastifyApplication) {
       sql`truncate users, tweets, follows, likes, refresh_tokens, notifications, outbox, media cascade`,
     );
   await app.get<Redis>(REDIS).flushdb();
+  // The test search indexes (prefix test_); fine to skip when it's down.
+  await app
+    .get(SearchService)
+    .deleteAllDocuments()
+    .catch(() => undefined);
 }
 
 type InjectResponse = Awaited<ReturnType<NestFastifyApplication['inject']>>;

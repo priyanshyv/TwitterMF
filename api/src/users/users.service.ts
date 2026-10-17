@@ -6,6 +6,8 @@ import { PG_UNIQUE_VIOLATION, pgErrorCode } from '../common/pg-errors.js';
 import { SNOWFLAKE } from '../common/id.module.js';
 import type { Snowflake } from '../common/snowflake.js';
 import { DB, type Database } from '../db/db.module.js';
+import { OutboxService } from '../jobs/jobs.module.js';
+import { message } from '../jobs/queues.js';
 import { users, type User } from '../db/schema/index.js';
 import { UsernamesService } from '../usernames/usernames.service.js';
 import { usernameCacheKey } from './user-records.service.js';
@@ -17,6 +19,7 @@ export class UsersService {
     @Inject(SNOWFLAKE) private readonly ids: Snowflake,
     @Inject(UsernamesService) private readonly usernames: UsernamesService,
     @Inject(CACHE) private readonly cache: RedisCache,
+    @Inject(OutboxService) private readonly outbox: OutboxService,
   ) {}
 
   async create(input: {
@@ -25,10 +28,17 @@ export class UsersService {
     passwordHash: string;
   }): Promise<User> {
     try {
-      const [user] = await this.db
-        .insert(users)
-        .values({ id: this.ids.next(), ...input })
-        .returning();
+      // The account and its search-indexing job commit together.
+      const user = await this.db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(users)
+          .values({ id: this.ids.next(), ...input })
+          .returning();
+        await this.outbox.add(tx, [
+          message.search({ kind: 'user', id: `${row.id}` }),
+        ]);
+        return row;
+      });
       await this.usernames.add(user.username);
       // Someone may have looked this name up before it existed, leaving a
       // cached "no such user" behind.

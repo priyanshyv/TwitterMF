@@ -43,6 +43,16 @@ export const users = pgTable(
   (t) => [
     // "Alice" and "alice" are the same account: uniqueness ignores case.
     uniqueIndex('users_username_lower_idx').on(sql`lower(${t.username})`),
+    // Trigram indexes (pg_trgm) make "name ILIKE '%ali%'" fast: the search
+    // fallback when Meilisearch is unavailable.
+    index('users_username_trgm_idx').using(
+      'gin',
+      t.username.op('gin_trgm_ops'),
+    ),
+    index('users_display_name_trgm_idx').using(
+      'gin',
+      t.displayName.op('gin_trgm_ops'),
+    ),
     check('users_username_format', sql`${t.username} ~ '^[A-Za-z0-9_]{1,15}$'`),
   ],
 );
@@ -79,6 +89,7 @@ export const tweets = pgTable(
     index('tweets_reply_to_id_id_idx')
       .on(t.replyToId, t.id.desc())
       .where(sql`${t.replyToId} is not null`),
+    index('tweets_text_trgm_idx').using('gin', t.text.op('gin_trgm_ops')),
     // One retweet per user per tweet; retweeting twice is a no-op.
     uniqueIndex('tweets_one_retweet_per_user_idx')
       .on(t.authorId, t.retweetOfId)
