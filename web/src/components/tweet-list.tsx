@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api/client';
 import type { FeedItem, Page } from '@/lib/api/types';
+import { EmptyState } from './empty-state';
 import { FeedItemCard } from './tweet-card';
 
 // The first page is rendered on the server; "Load more" fetches older pages
@@ -40,11 +41,7 @@ export function TweetList({
   }
 
   if (tweets.length === 0) {
-    return (
-      <div className="px-8 py-16 text-center text-[15px] text-muted-foreground">
-        {empty}
-      </div>
-    );
+    return typeof empty === 'string' ? <EmptyState title={empty} /> : empty;
   }
 
   return (

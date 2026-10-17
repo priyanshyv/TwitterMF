@@ -57,10 +57,17 @@ export function getProfile(username: string): Promise<Profile | null> {
   return get<Profile>(`/users/${encodeURIComponent(username)}`);
 }
 
+export type ProfileTab = 'posts' | 'replies' | 'media' | 'likes';
+
+export function userTweetsPath(username: string, tab: ProfileTab) {
+  return `/users/${encodeURIComponent(username)}/tweets?tab=${tab}`;
+}
+
 export function getUserTweets(
   username: string,
+  tab: ProfileTab = 'posts',
 ): Promise<Page<FeedItem> | null> {
-  return get<Page<FeedItem>>(`/users/${encodeURIComponent(username)}/tweets`);
+  return get<Page<FeedItem>>(userTweetsPath(username, tab));
 }
 
 export function getNotifications(): Promise<Page<NotificationItem> | null> {

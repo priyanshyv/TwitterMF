@@ -186,16 +186,33 @@ export class TweetsService {
 
   // A profile's tweets and retweets, newest first.
   // Served by tweets(author_id, id desc), as an index-only scan.
+  //   posts    their tweets and retweets, without replies (Twitter's default)
+  //   replies  only their replies
+  //   media    their tweets with images
+  //   likes    tweets they liked (ordered by tweet, newest first: the
+  //            likes primary key (user_id, tweet_id) serves this directly)
   async byAuthor(
     authorId: bigint,
     page: PageQuery,
     viewerId?: bigint,
+    tab: ProfileTab = 'posts',
   ): Promise<Page<FeedItem>> {
-    const { rows } = await this.db.execute<{ id: string }>(sql`
-      select id from tweets
-      where author_id = ${authorId} ${olderThan(page.before)}
-      order by id desc
-      limit ${page.limit + 1}`);
+    const n = page.limit + 1;
+    const query =
+      tab === 'likes'
+        ? sql`
+          select tweet_id as id from likes
+          where user_id = ${authorId}
+            ${page.before === undefined ? sql`` : sql`and tweet_id < ${page.before}`}
+          order by tweet_id desc
+          limit ${n}`
+        : sql`
+          select t.id from tweets t
+          where t.author_id = ${authorId} ${olderThan(page.before, sql`t.id`)}
+            ${PROFILE_FILTER[tab]}
+          order by t.id desc
+          limit ${n}`;
+    const { rows } = await this.db.execute<{ id: string }>(query);
     return this.page(rows, page.limit, viewerId);
   }
 
@@ -445,6 +462,19 @@ export class TweetsService {
   }
 }
 
-function olderThan(before: bigint | undefined) {
-  return before === undefined ? sql`` : sql`and id < ${before}`;
+function olderThan(before: bigint | undefined, column = sql`id`) {
+  return before === undefined ? sql`` : sql`and ${column} < ${before}`;
 }
+
+export const PROFILE_TABS = ['posts', 'replies', 'media', 'likes'] as const;
+export type ProfileTab = (typeof PROFILE_TABS)[number];
+
+const PROFILE_FILTER: Record<
+  Exclude<ProfileTab, 'likes'>,
+  ReturnType<typeof sql>
+> = {
+  posts: sql`and t.reply_to_id is null`,
+  replies: sql`and t.reply_to_id is not null`,
+  media: sql`and t.retweet_of_id is null and exists (
+    select 1 from media m where m.tweet_id = t.id and m.status = 'ready')`,
+};

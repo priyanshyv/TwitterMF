@@ -2,7 +2,7 @@
 
 import { ImagePlus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -28,10 +28,18 @@ export function ComposeBox({
   displayName,
   username,
   replyToId,
+  replyingTo,
+  id = replyToId ? 'reply' : 'compose',
+  autoFocus,
+  onPosted,
 }: {
   displayName: string;
   username: string;
   replyToId?: string;
+  replyingTo?: string; // username shown as "Replying to @x"
+  id?: string;
+  autoFocus?: boolean;
+  onPosted?: () => void; // e.g. close the dialog it lives in
 }) {
   const router = useRouter();
   const [text, setText] = useState('');
@@ -43,12 +51,6 @@ export function ComposeBox({
   // the same key goes with it, so a request that actually landed (but whose
   // answer got lost) is replayed instead of posted twice.
   const idempotencyKey = useRef<string>(null);
-
-  // The sidebar's Post button links to /#compose.
-  useEffect(() => {
-    if (!replyToId && window.location.hash === '#compose')
-      input.current?.focus();
-  }, [replyToId]);
 
   const count = charCount(text.trim());
   const left = MAX - count;
@@ -110,6 +112,7 @@ export function ComposeBox({
       setAttachments([]);
       idempotencyKey.current = null; // the next tweet is a new action
       router.refresh(); // re-render the timeline on the server
+      onPosted?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not post');
     } finally {
@@ -121,9 +124,18 @@ export function ComposeBox({
     <form onSubmit={post} className="flex gap-3 px-4 pt-3 pb-2">
       <UserAvatar name={displayName} seed={username} />
       <div className="flex min-w-0 flex-1 flex-col">
+        {replyingTo && (
+          <p className="pt-1 text-[15px] text-muted-foreground">
+            Replying to{' '}
+            <a href={`/${replyingTo}`} className="text-sky-500 hover:underline">
+              @{replyingTo}
+            </a>
+          </p>
+        )}
         <Textarea
           ref={input}
-          id={replyToId ? 'reply' : 'compose'}
+          id={id}
+          autoFocus={autoFocus}
           value={text}
           onChange={(e) => {
             setText(e.target.value);

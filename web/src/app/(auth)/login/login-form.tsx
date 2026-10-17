@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { FormField } from '@/components/form-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/password-input';
 import { api } from '@/lib/api/client';
 
 export function LoginForm() {
@@ -37,6 +38,7 @@ export function LoginForm() {
     <form onSubmit={submit} className="flex flex-col gap-4">
       <FormField id="username" label="Username">
         <Input
+          className="h-11"
           id="username"
           name="username"
           autoComplete="username"
@@ -45,16 +47,21 @@ export function LoginForm() {
         />
       </FormField>
       <FormField id="password" label="Password" error={error}>
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
+          className="h-11"
           autoComplete="current-password"
           required
           aria-invalid={!!error}
         />
       </FormField>
-      <Button type="submit" disabled={busy}>
+      <Button
+        type="submit"
+        size="lg"
+        className="mt-2 h-11 rounded-full text-[15px] font-bold"
+        disabled={busy}
+      >
         {busy ? 'Logging in…' : 'Log in'}
       </Button>
     </form>

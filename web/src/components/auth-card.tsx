@@ -1,12 +1,4 @@
 import Link from 'next/link';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 
 export function AuthCard(props: {
   title: string;
@@ -15,23 +7,23 @@ export function AuthCard(props: {
   children: React.ReactNode;
 }) {
   return (
-    <main className="mx-auto flex max-w-sm flex-col px-4 py-16">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">{props.title}</CardTitle>
-          <CardDescription>{props.description}</CardDescription>
-        </CardHeader>
-        <CardContent>{props.children}</CardContent>
-        <CardFooter className="justify-center text-sm text-muted-foreground">
-          {props.footer.text}&nbsp;
-          <Link
-            href={props.footer.href}
-            className="font-medium text-foreground hover:underline"
-          >
-            {props.footer.linkText}
-          </Link>
-        </CardFooter>
-      </Card>
-    </main>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-extrabold tracking-tight">
+          {props.title}
+        </h1>
+        <p className="text-muted-foreground">{props.description}</p>
+      </div>
+      {props.children}
+      <p className="text-center text-sm text-muted-foreground">
+        {props.footer.text}{' '}
+        <Link
+          href={props.footer.href}
+          className="font-semibold text-sky-500 hover:underline"
+        >
+          {props.footer.linkText}
+        </Link>
+      </p>
+    </div>
   );
 }

@@ -1,6 +1,8 @@
+import { MessageCircle } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import { ComposeBox } from '@/components/compose-box';
+import { EmptyState } from '@/components/empty-state';
 import { Columns, PageHeader } from '@/components/shell/columns';
 import { TweetCard } from '@/components/tweet-card';
 import { TweetList } from '@/components/tweet-list';
@@ -45,6 +47,7 @@ async function ThreadContent({ params }: { params: Promise<{ id: string }> }) {
             displayName={me.displayName}
             username={me.username}
             replyToId={thread.tweet.id}
+            replyingTo={thread.tweet.author.username}
           />
         </div>
       )}
@@ -52,7 +55,11 @@ async function ThreadContent({ params }: { params: Promise<{ id: string }> }) {
         key={replies.items[0]?.id ?? 'empty'}
         initialPage={replies}
         endpoint={`/tweets/${thread.tweet.id}/replies`}
-        empty="No replies yet."
+        empty={
+          <EmptyState icon={MessageCircle} title="No replies yet">
+            Start the conversation.
+          </EmptyState>
+        }
       />
     </>
   );

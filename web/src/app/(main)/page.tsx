@@ -1,7 +1,8 @@
-import { Feather, Gauge, Layers, Radio } from 'lucide-react';
+import { Feather, Gauge, House, Layers, Radio } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { ComposeBox } from '@/components/compose-box';
+import { EmptyState } from '@/components/empty-state';
 import { NewPostsBanner } from '@/components/new-posts-banner';
 import { Columns, PageHeader } from '@/components/shell/columns';
 import { TweetList } from '@/components/tweet-list';
@@ -34,7 +35,11 @@ async function HomeContent() {
         key={timeline.items[0]?.id ?? 'empty'}
         initialPage={timeline}
         endpoint="/timeline"
-        empty="Your timeline is empty. Post something, or follow a few people."
+        empty={
+          <EmptyState icon={House} title="Welcome to your timeline">
+            Post something, or follow a few people from Who to follow.
+          </EmptyState>
+        }
       />
     </Columns>
   );

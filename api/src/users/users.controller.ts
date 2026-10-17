@@ -15,12 +15,14 @@ import type { AuthUser } from '../auth/auth.types.js';
 import { PageQuerySchema, type PageQuery } from '../common/pagination.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { RateLimit } from '../rate-limit/rate-limit.guard.js';
-import { TweetsService } from '../tweets/tweets.service.js';
+import { z } from 'zod';
+import { PROFILE_TABS, TweetsService } from '../tweets/tweets.service.js';
 import { FollowsService } from './follows.service.js';
 import { UserRecordsService, type UserRecord } from './user-records.service.js';
 import { UsernameSchema } from './user.schemas.js';
 
 const UsernameParam = new ZodPipe(UsernameSchema);
+const ProfileTabQuery = new ZodPipe(z.enum(PROFILE_TABS).default('posts'));
 
 @Controller('users')
 @UseGuards(AuthGuard)
@@ -61,10 +63,11 @@ export class UsersController {
   async userTweets(
     @Param('username', UsernameParam) username: string,
     @Query(new ZodPipe(PageQuerySchema)) page: PageQuery,
+    @Query('tab', ProfileTabQuery) tab: (typeof PROFILE_TABS)[number],
     @CurrentUser() viewer: AuthUser | undefined,
   ) {
     const user = await this.findOr404(username);
-    return this.tweets.byAuthor(BigInt(user.id), page, viewer?.id);
+    return this.tweets.byAuthor(BigInt(user.id), page, viewer?.id, tab);
   }
 
   @Post(':username/follow')

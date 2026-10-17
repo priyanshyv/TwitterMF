@@ -199,3 +199,81 @@ describe('image uploads', () => {
     await events.close();
   });
 });
+
+describe('profile tabs', () => {
+  let app: NestFastifyApplication;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('splits a profile into posts, replies, media and likes', async () => {
+    await resetData(app);
+    const alice = await signup(app, 'alice');
+    const bob = await signup(app, 'bob');
+    const as = (
+      cookie: string,
+      method: 'GET' | 'POST',
+      url: string,
+      payload?: object,
+    ) => app.inject({ method, url, payload, headers: { cookie } });
+
+    const bobs = (
+      await as(bob.cookie, 'POST', '/tweets', { text: 'bob original' })
+    ).json();
+    await as(alice.cookie, 'POST', '/tweets', { text: 'plain post' });
+    await as(alice.cookie, 'POST', '/tweets', {
+      text: 'a reply',
+      replyToId: bobs.id,
+    });
+    await as(alice.cookie, 'POST', `/tweets/${bobs.id}/retweet`);
+    await as(alice.cookie, 'POST', `/tweets/${bobs.id}/like`);
+    const image = await sharp({
+      create: { width: 50, height: 50, channels: 3, background: '#000' },
+    })
+      .png()
+      .toBuffer();
+    const up = (
+      await as(alice.cookie, 'POST', '/media/uploads', {
+        contentType: 'image/png',
+        bytes: image.length,
+      })
+    ).json();
+    await fetch(up.uploadUrl, {
+      method: 'PUT',
+      body: new Uint8Array(image),
+      headers: up.headers,
+    });
+    await as(alice.cookie, 'POST', `/media/${up.id}/complete`);
+    await as(alice.cookie, 'POST', '/tweets', {
+      text: 'with a photo',
+      mediaIds: [up.id],
+    });
+    await settle(app);
+
+    const tab = async (name: string) =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/users/alice/tweets?tab=${name}`,
+        })
+      )
+        .json()
+        .items.map((i: { tweet: { text: string } }) => i.tweet.text);
+    expect(await tab('posts')).toEqual([
+      'with a photo',
+      'bob original',
+      'plain post',
+    ]); // retweet included
+    expect(await tab('replies')).toEqual(['a reply']);
+    expect(await tab('media')).toEqual(['with a photo']);
+    expect(await tab('likes')).toEqual(['bob original']);
+    expect(
+      (await app.inject({ method: 'GET', url: '/users/alice/tweets?tab=nope' }))
+        .statusCode,
+    ).toBe(400);
+  });
+});

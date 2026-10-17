@@ -1,13 +1,12 @@
 import { TriangleAlert } from 'lucide-react';
-import Link from 'next/link';
 import { Suspense } from 'react';
 import { SearchBox } from '@/components/search-box';
 import { SearchResults } from '@/components/search-results';
 import { Columns } from '@/components/shell/columns';
 import { Trends } from '@/components/trends';
+import { Tab, Tabs } from '@/components/shell/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { search } from '@/lib/api/server';
-import { cn } from '@/lib/utils';
 
 export default function SearchPage({ searchParams }: PageProps<'/search'>) {
   return (
@@ -36,7 +35,7 @@ async function SearchContent({
           <SearchBox key={q} initial={q} autoFocus={!q} />
         </div>
         {q && (
-          <nav className="flex" aria-label="Result type">
+          <Tabs label="Result type">
             <Tab
               href={`/search?q=${encodeURIComponent(q)}`}
               active={type === 'tweets'}
@@ -49,7 +48,7 @@ async function SearchContent({
             >
               People
             </Tab>
-          </nav>
+          </Tabs>
         )}
       </div>
       {q ? (
@@ -89,30 +88,5 @@ async function Results({ q, type }: { q: string; type: 'tweets' | 'users' }) {
       )}
       <SearchResults key={`${q}:${type}`} q={q} type={type} initial={res} />
     </>
-  );
-}
-
-function Tab({
-  href,
-  active,
-  children,
-}: {
-  href: string;
-  active: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex flex-1 justify-center hover:bg-muted/50',
-        active ? 'font-bold' : 'text-muted-foreground',
-      )}
-    >
-      <span className={cn('py-3', active && 'border-b-4 border-sky-500')}>
-        {children}
-      </span>
-    </Link>
   );
 }

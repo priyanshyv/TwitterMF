@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { FormField } from '@/components/form-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/password-input';
 import { api, ApiError } from '@/lib/api/client';
 import type { UsernameAvailability } from '@/lib/api/types';
 
@@ -104,7 +105,7 @@ export function SignupForm() {
             onChange={(e) => setUsername(e.target.value.trim())}
             maxLength={15}
             autoComplete="username"
-            className="pl-7"
+            className="h-11 pl-7"
             required
             autoFocus
             aria-invalid={
@@ -116,6 +117,7 @@ export function SignupForm() {
       </FormField>
       <FormField id="displayName" label="Name" error={errors.displayName}>
         <Input
+          className="h-11"
           id="displayName"
           name="displayName"
           maxLength={50}
@@ -133,10 +135,10 @@ export function SignupForm() {
           </p>
         }
       >
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
+          className="h-11"
           minLength={8}
           autoComplete="new-password"
           required
@@ -144,6 +146,8 @@ export function SignupForm() {
       </FormField>
       <Button
         type="submit"
+        size="lg"
+        className="mt-2 h-11 rounded-full text-[15px] font-bold"
         disabled={
           busy ||
           (check.state === 'done' && !check.available) ||

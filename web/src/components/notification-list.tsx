@@ -2,6 +2,7 @@
 
 import {
   AtSign,
+  Bell,
   Heart,
   MessageCircle,
   Repeat2,
@@ -17,6 +18,7 @@ import type { NotificationItem, NotificationType, Page } from '@/lib/api/types';
 import { relativeTime } from '@/lib/format';
 import { tweetHref } from '@/lib/links';
 import { cn } from '@/lib/utils';
+import { EmptyState } from './empty-state';
 import { UserAvatar } from './user-avatar';
 
 const KIND: Record<
@@ -77,9 +79,9 @@ export function NotificationList({
 
   if (items.length === 0)
     return (
-      <p className="px-4 py-12 text-center text-muted-foreground">
-        Nothing yet. Likes, follows, replies and mentions show up here.
-      </p>
+      <EmptyState icon={Bell} title="Nothing to see here yet">
+        Likes, follows, replies and mentions show up here.
+      </EmptyState>
     );
 
   return (

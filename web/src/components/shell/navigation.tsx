@@ -1,7 +1,8 @@
-import { Bell, House, PenLine, Search, UserRound } from 'lucide-react';
+import { Bell, House, Search, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { LogoutButton } from '@/components/logout-button';
 import { Logo } from '@/components/logo';
+import { PostButton } from '@/components/post-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/user-avatar';
@@ -48,16 +49,7 @@ export async function SideNav() {
           )}
         </nav>
         {me ? (
-          <Button
-            asChild
-            size="lg"
-            className="mt-4 size-12 rounded-full text-base font-bold xl:h-12 xl:w-full"
-          >
-            <Link href="/#compose" aria-label="Post">
-              <PenLine className="xl:hidden" />
-              <span className="hidden xl:inline">Post</span>
-            </Link>
-          </Button>
+          <PostButton displayName={me.displayName} username={me.username} />
         ) : (
           <div className="mt-4 hidden flex-col gap-2 xl:flex">
             <Button asChild size="lg" className="rounded-full font-bold">
@@ -139,6 +131,13 @@ export async function MobileNav() {
             icon={<UserRound />}
           />
         </nav>
+      )}
+      {me && (
+        <PostButton
+          displayName={me.displayName}
+          username={me.username}
+          floating
+        />
       )}
     </>
   );
