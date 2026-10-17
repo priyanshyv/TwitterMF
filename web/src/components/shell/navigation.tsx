@@ -1,4 +1,4 @@
-import { Bell, House, PenLine, UserRound } from 'lucide-react';
+import { Bell, House, PenLine, Search, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { LogoutButton } from '@/components/logout-button';
 import { Logo } from '@/components/logo';
@@ -30,6 +30,7 @@ export async function SideNav() {
           className="flex flex-col items-center gap-1 xl:items-stretch"
         >
           <NavLink href="/" label="Home" icon={<House />} />
+          <NavLink href="/search" label="Explore" icon={<Search />} />
           {me && (
             <>
               <NavLink
@@ -125,6 +126,7 @@ export async function MobileNav() {
           className="fixed inset-x-0 bottom-0 z-20 flex border-t bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
         >
           <TabLink href="/" label="Home" icon={<House />} />
+          <TabLink href="/search" label="Explore" icon={<Search />} />
           <TabLink
             href="/notifications"
             label="Notifications"

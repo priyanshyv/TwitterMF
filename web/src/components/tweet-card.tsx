@@ -5,6 +5,7 @@ import { relativeTime } from '@/lib/format';
 import { tweetHref } from '@/lib/links';
 import { cn } from '@/lib/utils';
 import { TweetActions } from './tweet-actions';
+import { TweetMedia } from './tweet-media';
 import { TweetText } from './tweet-text';
 import { UserAvatar } from './user-avatar';
 
@@ -89,6 +90,7 @@ export function TweetCard({
         <div className="mt-3">
           {replyingTo}
           <TweetText text={tweet.text} href={tweetHref(tweet)} large />
+          <TweetMedia media={tweet.media} large />
         </div>
         <p
           className="mt-4 text-[15px] text-muted-foreground"
@@ -150,6 +152,7 @@ export function TweetCard({
           </header>
           {replyingTo}
           <TweetText text={tweet.text} href={tweetHref(tweet)} />
+          <TweetMedia media={tweet.media} />
           <TweetActions tweet={tweet} />
         </div>
       </div>

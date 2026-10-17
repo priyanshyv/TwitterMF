@@ -17,6 +17,16 @@ const SERVICES = [
   { key: 'api', name: 'API', detail: 'NestJS on port 4000' },
   { key: 'db', name: 'Postgres', detail: 'Tweets, users, follows' },
   { key: 'redis', name: 'Redis', detail: 'Cache, counters, queues' },
+  {
+    key: 'search',
+    name: 'Meilisearch',
+    detail: 'Search (optional: falls back to Postgres)',
+  },
+  {
+    key: 'storage',
+    name: 'Object storage',
+    detail: 'Image uploads (optional)',
+  },
 ] as const;
 
 export default function StatusPage() {
@@ -54,6 +64,8 @@ async function Status() {
   const states: Record<(typeof SERVICES)[number]['key'], DependencyStatus> = {
     api: health ? 'up' : 'down',
     db: health?.db ?? 'down',
+    search: health?.search ?? 'down',
+    storage: health?.storage ?? 'down',
     redis: health?.redis ?? 'down',
   };
 

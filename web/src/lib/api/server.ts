@@ -6,8 +6,10 @@ import type {
   NotificationItem,
   Page,
   Profile,
+  SearchResponse,
   Suggestion,
   Thread,
+  Trend,
   User,
 } from './types';
 
@@ -69,6 +71,17 @@ export async function getUnreadCount(): Promise<number> {
   return (
     (await get<{ unread: number }>('/notifications/unread-count'))?.unread ?? 0
   );
+}
+
+export function search(
+  q: string,
+  type: 'tweets' | 'users',
+): Promise<SearchResponse | null> {
+  return get<SearchResponse>(`/search?q=${encodeURIComponent(q)}&type=${type}`);
+}
+
+export async function getTrends(): Promise<Trend[]> {
+  return (await get<{ trends: Trend[] }>('/trends'))?.trends ?? [];
 }
 
 export async function getSuggestions(): Promise<Suggestion[]> {

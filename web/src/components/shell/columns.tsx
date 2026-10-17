@@ -1,17 +1,24 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense } from 'react';
+import { SearchBox } from '@/components/search-box';
+import { Trends } from '@/components/trends';
 import { Skeleton } from '@/components/ui/skeleton';
 import { WhoToFollow } from '@/components/who-to-follow';
 
 // The page body: a 600px timeline column with borders down both sides,
-// and on wide screens a sticky right rail.
+// and on wide screens a right rail (search box stuck to the top, then
+// trends and suggestions scrolling with the page).
 export function Columns({
   children,
   aside = true,
+  search = true,
+  trends = true,
 }: {
   children: React.ReactNode;
   aside?: boolean;
+  search?: boolean;
+  trends?: boolean;
 }) {
   return (
     <div className="flex justify-center gap-8 lg:justify-start">
@@ -20,7 +27,17 @@ export function Columns({
       </main>
       {aside && (
         <aside className="hidden w-[330px] shrink-0 lg:block">
-          <div className="sticky top-0 flex flex-col gap-4 py-3">
+          {search && (
+            <div className="sticky top-0 z-10 bg-background py-2">
+              <SearchBox />
+            </div>
+          )}
+          <div className="flex flex-col gap-4 py-3">
+            {trends && (
+              <Suspense fallback={<Skeleton className="h-64 rounded-2xl" />}>
+                <Trends />
+              </Suspense>
+            )}
             <Suspense fallback={<Skeleton className="h-72 rounded-2xl" />}>
               <WhoToFollow />
             </Suspense>

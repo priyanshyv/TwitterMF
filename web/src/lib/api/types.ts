@@ -15,6 +15,15 @@ export interface UserRef {
   displayName: string;
 }
 
+export interface MediaView {
+  id: string;
+  status: 'uploading' | 'processing' | 'ready' | 'failed';
+  width: number | null;
+  height: number | null;
+  url: string | null;
+  thumbUrl: string | null;
+}
+
 export interface Tweet {
   id: string;
   text: string;
@@ -22,6 +31,7 @@ export interface Tweet {
   author: UserRef;
   replyTo: { id: string; author: UserRef } | null;
   counts: { likes: number; replies: number; retweets: number };
+  media: MediaView[];
   // What the logged-in viewer has done to it; null when logged out.
   viewer: { liked: boolean; retweeted: boolean } | null;
 }
@@ -58,6 +68,9 @@ export interface HealthReport {
   status: 'ok' | 'degraded';
   db: DependencyStatus;
   redis: DependencyStatus;
+  search: DependencyStatus;
+  storage: DependencyStatus;
+  breakers: Record<'search' | 'storage', 'closed' | 'open' | 'half-open'>;
   uptimeSeconds: number;
 }
 
@@ -84,3 +97,23 @@ export type RealtimeEvent =
   | { type: 'hello' }
   | { type: 'notification'; unread: number }
   | { type: 'timeline'; tweetId: string; authorId: string };
+
+export interface PersonResult extends UserRef {
+  bio: string;
+  followers: number;
+  viewer: { isMe: boolean; follows: boolean } | null;
+}
+
+// `source: 'postgres'` means search is running in fallback mode.
+export interface SearchResponse {
+  source: 'meilisearch' | 'postgres';
+  hasMore: boolean;
+  tweets?: FeedItem[];
+  users?: PersonResult[];
+}
+
+export interface Trend {
+  tag: string;
+  posts: number;
+  score: number;
+}

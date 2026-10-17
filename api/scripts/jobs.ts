@@ -21,16 +21,18 @@ if (process.argv.includes('--replay')) {
   );
 } else {
   const rows = await Promise.all(
-    (['fanout', 'notifications'] as const).map(async (name) => {
-      const c = await queues[name].getJobCounts(
-        'waiting',
-        'active',
-        'delayed',
-        'completed',
-        'failed',
-      );
-      return { queue: name, ...c };
-    }),
+    (['fanout', 'notifications', 'search', 'media'] as const).map(
+      async (name) => {
+        const c = await queues[name].getJobCounts(
+          'waiting',
+          'active',
+          'delayed',
+          'completed',
+          'failed',
+        );
+        return { queue: name, ...c };
+      },
+    ),
   );
   console.table(rows);
   const dead = await listDeadLetters(queues);
