@@ -61,13 +61,13 @@ if (spawnSync('docker', ['info'], { stdio: 'ignore' }).status !== 0) {
   );
 }
 
-// 2. Postgres + Redis. `--wait` blocks until their healthchecks pass.
-process.stdout.write(dim('  starting postgres + redis… '));
+// 2. Postgres, Redis, storage, search. `--wait` blocks until their healthchecks pass.
+process.stdout.write(dim('  starting docker services… '));
 const up = spawnSync('docker', [...COMPOSE, 'up', '-d', '--wait'], {
   encoding: 'utf8',
 });
 if (up.status !== 0)
-  fail('Postgres or Redis failed to start.', up.stderr || up.stdout);
+  fail('A Docker service failed to start.', up.stderr || up.stdout);
 console.log(styleText('green', '✓'));
 
 // 3. Bring the database schema up to date (no-op when nothing changed).
