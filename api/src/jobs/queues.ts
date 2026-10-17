@@ -9,6 +9,8 @@
 export const QUEUE = {
   fanout: 'fanout',
   notifications: 'notifications',
+  search: 'search',
+  media: 'media',
   // Jobs that failed every attempt land here, untouched, for a human to
   // inspect and replay (`npm run jobs`). No worker consumes it.
   deadLetter: 'dead-letter',
@@ -27,6 +29,49 @@ export type NotificationJob =
   // A new tweet: notifies the author of the tweet it replies to, and
   // everyone it @mentions.
   | { kind: 'tweet'; actorId: string; tweetId: string };
+
+export type SearchJob =
+  | { kind: 'tweet'; id: string } // (re)index one tweet
+  | { kind: 'user'; id: string } // (re)index one user
+  | { kind: 'trend'; tweetId: string }; // count its hashtags toward trending
+
+export interface MediaJob {
+  mediaId: string;
+}
+
+// What producers write into the outbox: which queue, which job, what data.
+export type OutboxMessage =
+  | { queue: 'fanout'; name: 'tweet'; data: FanoutJob }
+  | {
+      queue: 'notifications';
+      name: NotificationJob['kind'];
+      data: NotificationJob;
+    }
+  | { queue: 'search'; name: SearchJob['kind']; data: SearchJob }
+  | { queue: 'media'; name: 'process'; data: MediaJob };
+
+export const message = {
+  fanout: (tweetId: bigint, authorId: bigint): OutboxMessage => ({
+    queue: 'fanout',
+    name: 'tweet',
+    data: { tweetId: `${tweetId}`, authorId: `${authorId}` },
+  }),
+  notify: (job: NotificationJob): OutboxMessage => ({
+    queue: 'notifications',
+    name: job.kind,
+    data: job,
+  }),
+  search: (job: SearchJob): OutboxMessage => ({
+    queue: 'search',
+    name: job.kind,
+    data: job,
+  }),
+  media: (mediaId: bigint): OutboxMessage => ({
+    queue: 'media',
+    name: 'process',
+    data: { mediaId: `${mediaId}` },
+  }),
+};
 
 export interface DeadLetterJob {
   queue: QueueName;

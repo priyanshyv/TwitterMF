@@ -3,7 +3,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { CountersService } from '../counters/counters.service.js';
 import { DB, type Database } from '../db/db.module.js';
 import { follows } from '../db/schema/index.js';
-import { JobsService } from '../jobs/jobs.module.js';
+import { OutboxService } from '../jobs/jobs.module.js';
+import { message } from '../jobs/queues.js';
 import { TimelineService } from '../timeline/timeline.service.js';
 
 @Injectable()
@@ -12,7 +13,7 @@ export class FollowsService {
     @Inject(DB) private readonly db: Database,
     @Inject(CountersService) private readonly counters: CountersService,
     @Inject(TimelineService) private readonly timelines: TimelineService,
-    @Inject(JobsService) private readonly jobs: JobsService,
+    @Inject(OutboxService) private readonly outbox: OutboxService,
   ) {}
 
   async follow(followerId: bigint, followeeId: bigint): Promise<void> {
@@ -21,19 +22,25 @@ export class FollowsService {
     // Following twice is a no-op, not an error: retries and double-clicks
     // are harmless (the primary key prevents duplicate rows). Counts only
     // move when a row was actually added.
-    const inserted = await this.db
-      .insert(follows)
-      .values({ followerId, followeeId })
-      .onConflictDoNothing()
-      .returning({ id: follows.followeeId });
+    const inserted = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(follows)
+        .values({ followerId, followeeId })
+        .onConflictDoNothing()
+        .returning({ id: follows.followeeId });
+      if (rows.length)
+        await this.outbox.add(tx, [
+          message.notify({
+            kind: 'follow',
+            actorId: `${followerId}`,
+            followeeId: `${followeeId}`,
+          }),
+        ]);
+      return rows;
+    });
     if (inserted.length) {
       await this.countFollow(followerId, followeeId, 1);
       await this.timelines.invalidate(followerId); // now includes their tweets
-      await this.jobs.notify({
-        kind: 'follow',
-        actorId: `${followerId}`,
-        followeeId: `${followeeId}`,
-      });
     }
   }
 

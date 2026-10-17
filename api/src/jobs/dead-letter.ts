@@ -4,6 +4,8 @@ import { QUEUE, type DeadLetterJob, type QueueName } from './queues.js';
 const BY_NAME: Record<QueueName, keyof Queues> = {
   [QUEUE.fanout]: 'fanout',
   [QUEUE.notifications]: 'notifications',
+  [QUEUE.search]: 'search',
+  [QUEUE.media]: 'media',
   [QUEUE.deadLetter]: 'deadLetter',
 };
 

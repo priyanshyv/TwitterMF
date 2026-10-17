@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module.js';
+import { BreakersModule } from './breakers/breakers.module.js';
 import { CacheModule } from './cache/cache.module.js';
 import { IdModule } from './common/id.module.js';
 import { ConfigModule, ENV } from './config/config.module.js';
@@ -13,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { RateLimitModule } from './rate-limit/rate-limit.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { StorageModule } from './storage/storage.module.js';
 import { TweetsModule } from './tweets/tweets.module.js';
 import { UsersModule } from './users/users.module.js';
 
@@ -28,6 +30,8 @@ import { UsersModule } from './users/users.module.js';
     RateLimitModule,
     JobsModule,
     RealtimeModule,
+    BreakersModule,
+    StorageModule,
     HealthModule,
     AuthModule,
     UsersModule,

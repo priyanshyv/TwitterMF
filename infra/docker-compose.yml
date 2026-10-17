@@ -31,6 +31,44 @@ services:
       timeout: 3s
       retries: 30
 
+  # S3-compatible object storage for uploaded images. RustFS speaks the same
+  # API as AWS S3 and Cloudflare R2, so moving to R2 later is a config change.
+  # (MinIO stopped publishing free Docker images in 2025.)
+  storage:
+    image: rustfs/rustfs:1.0.3
+    environment:
+      RUSTFS_ACCESS_KEY: twitter
+      RUSTFS_SECRET_KEY: twitter-dev-secret
+    ports:
+      - '9000:9000'
+    volumes:
+      - storagedata:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-fs', 'http://localhost:9000/health']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Full-text search: typo tolerance, ranking, filters. Fed from Postgres
+  # through the outbox, so it's a derived copy that can always be rebuilt.
+  search:
+    image: getmeili/meilisearch:v1.55.0
+    environment:
+      MEILI_MASTER_KEY: twitter-dev-master-key
+      MEILI_NO_ANALYTICS: 'true'
+      MEILI_ENV: development
+    ports:
+      - '7700:7700'
+    volumes:
+      - searchdata:/meili_data
+    healthcheck:
+      test: ['CMD', 'curl', '-fs', 'http://localhost:7700/health']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   pgdata:
   redisdata:
+  storagedata:
+  searchdata:

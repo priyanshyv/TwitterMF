@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { AppModule } from '../src/app.module.js';
 import { QUEUES, type Queues } from '../src/jobs/jobs.module.js';
+import { OutboxRelay } from '../src/jobs/outbox.relay.js';
 import { WorkerModule } from '../src/worker/worker.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { ENV } from '../src/config/config.module.js';
@@ -40,7 +41,7 @@ export async function resetData(app: NestFastifyApplication) {
   await app
     .get<Database>(DB)
     .execute(
-      sql`truncate users, tweets, follows, likes, refresh_tokens, notifications cascade`,
+      sql`truncate users, tweets, follows, likes, refresh_tokens, notifications, outbox cascade`,
     );
   await app.get<Redis>(REDIS).flushdb();
 }
@@ -76,23 +77,32 @@ export async function signup(
   };
 }
 
-// Waits until every queue has nothing waiting, running or scheduled.
+// Waits until the outbox is empty and every queue has nothing waiting,
+// running or scheduled.
 export async function settle(app: NestFastifyApplication, timeoutMs = 10_000) {
   const queues = app.get<Queues>(QUEUES);
+  const relay = app.get(OutboxRelay);
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    await relay.drain();
+    const outboxed = await relay.pending();
     const counts = await Promise.all(
-      [queues.fanout, queues.notifications].map((q) =>
-        q.getJobCounts(
-          'waiting',
-          'active',
-          'delayed',
-          'prioritized',
-          'waiting-children',
-        ),
+      [queues.fanout, queues.notifications, queues.search, queues.media].map(
+        (q) =>
+          q.getJobCounts(
+            'waiting',
+            'active',
+            'delayed',
+            'prioritized',
+            'waiting-children',
+          ),
       ),
     );
-    if (counts.every((c) => Object.values(c).every((n) => n === 0))) return;
+    if (
+      outboxed === 0 &&
+      counts.every((c) => Object.values(c).every((n) => n === 0))
+    )
+      return;
     if (Date.now() > deadline)
       throw new Error(
         `jobs still pending after ${timeoutMs} ms: ${JSON.stringify(counts)}`,

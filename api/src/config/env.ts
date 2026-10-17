@@ -31,6 +31,23 @@ const EnvSchema = z.object({
   FANOUT_MAX_FOLLOWERS: z.coerce.number().int().min(1).default(10_000),
   // First retry delay for background jobs; doubles each attempt.
   JOB_BACKOFF_MS: z.coerce.number().int().min(1).default(1_000),
+  // Object storage (S3 API: RustFS locally, Cloudflare R2 in production).
+  // ENDPOINT is how this server reaches it; PUBLIC_ENDPOINT is how browsers
+  // do (presigned upload URLs are signed for that host); MEDIA_BASE_URL is
+  // where finished images are served from (a CDN in production).
+  STORAGE_ENDPOINT: z.url().default('http://localhost:9000'),
+  STORAGE_PUBLIC_ENDPOINT: z.url().default('http://localhost:9000'),
+  STORAGE_BUCKET: z.string().min(3).default('twittermf'),
+  STORAGE_REGION: z.string().default('us-east-1'),
+  STORAGE_ACCESS_KEY: z.string().default('twitter'),
+  STORAGE_SECRET_KEY: z.string().default('twitter-dev-secret'),
+  MEDIA_BASE_URL: z.url().optional(), // default: <public endpoint>/<bucket>
+  // Full-text search.
+  MEILI_URL: z.url().default('http://localhost:7700'),
+  MEILI_KEY: z.string().default('twitter-dev-master-key'),
+  SEARCH_INDEX_PREFIX: z.string().default(''), // tests use their own indexes
+  // How long a tripped circuit breaker stays open before probing again.
+  BREAKER_RESET_MS: z.coerce.number().int().min(1).default(30_000),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
     .default('info'),

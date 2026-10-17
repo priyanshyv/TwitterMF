@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  bigserial,
+  jsonb,
   check,
   index,
   integer,
@@ -195,6 +197,20 @@ export const notifications = pgTable(
     ),
   ],
 );
+
+// The transactional outbox: jobs to run, written in the SAME transaction as
+// the change that causes them (the tweet, the like). Either both commit or
+// neither does, so a saved tweet can never lose its fan-out because Redis
+// was down at the wrong moment. A relay in the worker moves rows from here
+// into the job queues, then deletes them.
+export const outbox = pgTable('outbox', {
+  // Plain sequence, not a Snowflake: the relay reads rows in insert order.
+  id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+  queue: text('queue').notNull(),
+  name: text('name').notNull(),
+  payload: jsonb('payload').notNull(),
+  createdAt: createdAt(),
+});
 
 export type User = typeof users.$inferSelect;
 export type Tweet = typeof tweets.$inferSelect;

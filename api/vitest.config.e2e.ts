@@ -23,6 +23,10 @@ export default defineConfig({
       RATE_LIMIT_ENABLED: 'false',
       // Retries 10, 20, 40… ms instead of 1, 2, 4… s.
       JOB_BACKOFF_MS: '10',
+      // Separate bucket and search indexes, so tests never touch dev data.
+      STORAGE_BUCKET: 'twittermf-test',
+      SEARCH_INDEX_PREFIX: 'test_',
+      BREAKER_RESET_MS: '300',
     },
   },
 });

@@ -10,7 +10,8 @@ import {
   type CounterChange,
 } from '../counters/counters.service.js';
 import { DB, type Database } from '../db/db.module.js';
-import { JobsService } from '../jobs/jobs.module.js';
+import { OutboxService } from '../jobs/jobs.module.js';
+import { message } from '../jobs/queues.js';
 import { likes, tweets } from '../db/schema/index.js';
 import { TimelineService } from '../timeline/timeline.service.js';
 import {
@@ -39,7 +40,7 @@ export class TweetsService {
     @Inject(CountersService) private readonly counters: CountersService,
     @Inject(UserRecordsService) private readonly users: UserRecordsService,
     @Inject(TimelineService) private readonly timelines: TimelineService,
-    @Inject(JobsService) private readonly jobs: JobsService,
+    @Inject(OutboxService) private readonly outbox: OutboxService,
   ) {}
 
   // ---- Writes ------------------------------------------------------------
@@ -52,9 +53,22 @@ export class TweetsService {
     // Replying to a retweet means replying to the original.
     const parentId = replyToId ? await this.contentId(replyToId) : null;
     const id = this.ids.next();
-    await this.db
-      .insert(tweets)
-      .values({ id, authorId, text, replyToId: parentId });
+    // The tweet and the jobs it causes commit together (transactional
+    // outbox): no saved tweet without its fan-out and notifications.
+    await this.db.transaction(async (tx) => {
+      await tx
+        .insert(tweets)
+        .values({ id, authorId, text, replyToId: parentId });
+      await this.outbox.add(tx, [
+        message.fanout(id, authorId),
+        // Replies and @mentions become notifications, in the worker.
+        message.notify({
+          kind: 'tweet',
+          actorId: `${authorId}`,
+          tweetId: `${id}`,
+        }),
+      ]);
+    });
 
     const changes: CounterChange[] = [
       { entity: 'user', id: authorId, field: 'tweets', by: 1 },
@@ -62,13 +76,7 @@ export class TweetsService {
     if (parentId)
       changes.push({ entity: 'tweet', id: parentId, field: 'replies', by: 1 });
     await this.counters.change(changes);
-    await this.published(authorId, id);
-    // Replies and @mentions become notifications, in the worker.
-    await this.jobs.notify({
-      kind: 'tweet',
-      actorId: `${authorId}`,
-      tweetId: `${id}`,
-    });
+    await this.ownTimeline(authorId, id);
     return this.view(id, authorId);
   }
 
@@ -76,21 +84,26 @@ export class TweetsService {
   // count only moves when a row was actually inserted or deleted.
   async like(userId: bigint, tweetId: bigint): Promise<TweetView> {
     const target = await this.contentId(tweetId);
-    const inserted = await this.db
-      .insert(likes)
-      .values({ userId, tweetId: target })
-      .onConflictDoNothing()
-      .returning({ id: likes.tweetId });
-    if (inserted.length) {
+    const inserted = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(likes)
+        .values({ userId, tweetId: target })
+        .onConflictDoNothing()
+        .returning({ id: likes.tweetId });
+      if (rows.length)
+        await this.outbox.add(tx, [
+          message.notify({
+            kind: 'like',
+            actorId: `${userId}`,
+            tweetId: `${target}`,
+          }),
+        ]);
+      return rows;
+    });
+    if (inserted.length)
       await this.counters.change([
         { entity: 'tweet', id: target, field: 'likes', by: 1 },
       ]);
-      await this.jobs.notify({
-        kind: 'like',
-        actorId: `${userId}`,
-        tweetId: `${target}`,
-      });
-    }
     return this.view(target, userId);
   }
 
@@ -111,28 +124,35 @@ export class TweetsService {
     const target = await this.contentId(tweetId);
     // The partial unique index (author_id, retweet_of_id) makes a second
     // retweet of the same tweet a no-op.
-    const inserted = await this.db
-      .insert(tweets)
-      .values({
-        id: this.ids.next(),
-        authorId: userId,
-        text: '',
-        retweetOfId: target,
-      })
-      .onConflictDoNothing()
-      .returning({ id: tweets.id });
+    const inserted = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(tweets)
+        .values({
+          id: this.ids.next(),
+          authorId: userId,
+          text: '',
+          retweetOfId: target,
+        })
+        .onConflictDoNothing()
+        .returning({ id: tweets.id });
+      if (rows.length)
+        await this.outbox.add(tx, [
+          // The retweet row goes into the retweeter's followers' timelines.
+          message.fanout(rows[0].id, userId),
+          message.notify({
+            kind: 'retweet',
+            actorId: `${userId}`,
+            tweetId: `${target}`,
+          }),
+        ]);
+      return rows;
+    });
     if (inserted.length) {
       await this.counters.change([
         { entity: 'tweet', id: target, field: 'retweets', by: 1 },
         { entity: 'user', id: userId, field: 'tweets', by: 1 },
       ]);
-      // The retweet row goes into the retweeter's followers' timelines.
-      await this.published(userId, inserted[0].id);
-      await this.jobs.notify({
-        kind: 'retweet',
-        actorId: `${userId}`,
-        tweetId: `${target}`,
-      });
+      await this.ownTimeline(userId, inserted[0].id);
     }
     return this.view(target, userId);
   }
@@ -221,14 +241,12 @@ export class TweetsService {
     return this.page(rows, page.limit, viewerId);
   }
 
-  // A new row in the author's own timeline right away (so you see your own
-  // tweet immediately: read-your-writes), and in followers' timelines via
-  // the worker.
-  private async published(authorId: bigint, rowId: bigint) {
+  // A new row in the author's own timeline right away, so you see your own
+  // tweet immediately (read-your-writes). Followers get it via the worker.
+  private async ownTimeline(authorId: bigint, rowId: bigint) {
     await this.timelines
       .push([authorId.toString()], rowId.toString())
       .catch(() => undefined); // cold or unavailable: rebuilt on next read
-    await this.jobs.fanout({ tweetId: `${rowId}`, authorId: `${authorId}` });
   }
 
   // ---- Hydration ---------------------------------------------------------
