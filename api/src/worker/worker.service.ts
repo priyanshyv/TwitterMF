@@ -5,16 +5,18 @@ import {
   type BeforeApplicationShutdown,
   type OnModuleInit,
 } from '@nestjs/common';
-import { Worker, type Job } from 'bullmq';
+import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { QUEUE_CONNECTION, QUEUES, type Queues } from '../jobs/jobs.module.js';
 import {
   QUEUE,
   type DeadLetterJob,
   type FanoutJob,
+  type MediaJob,
   type NotificationJob,
   type QueueName,
 } from '../jobs/queues.js';
+import { MediaProcessor } from '../media/media.processor.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { FanoutProcessor } from '../timeline/fanout.processor.js';
 
@@ -31,6 +33,7 @@ export class WorkerService implements OnModuleInit, BeforeApplicationShutdown {
     @Inject(FanoutProcessor) private readonly fanout: FanoutProcessor,
     @Inject(NotificationsService)
     private readonly notifications: NotificationsService,
+    @Inject(MediaProcessor) private readonly media: MediaProcessor,
   ) {}
 
   onModuleInit() {
@@ -40,6 +43,8 @@ export class WorkerService implements OnModuleInit, BeforeApplicationShutdown {
     this.start<NotificationJob>(QUEUE.notifications, 10, (job) =>
       this.notifications.handle(job.data),
     );
+    // Image work is CPU-heavy; a few at a time per worker process.
+    this.start<MediaJob>(QUEUE.media, 2, (job) => this.media.process(job.data));
   }
 
   private start<T>(
@@ -54,6 +59,16 @@ export class WorkerService implements OnModuleInit, BeforeApplicationShutdown {
 
     worker.on('failed', (job, err) => {
       if (!job) return;
+      // Some failures are final (a file that isn't an image): the job threw
+      // UnrecoverableError, BullMQ skips the retries, and it's not a dead
+      // letter either: there's nothing to replay.
+      if (
+        err instanceof UnrecoverableError ||
+        err.name === 'UnrecoverableError'
+      ) {
+        this.logger.warn(`${name}/${job.name} failed for good: ${err.message}`);
+        return;
+      }
       const attempts = job.opts.attempts ?? 1;
       if (job.attemptsMade < attempts) {
         this.logger.warn(

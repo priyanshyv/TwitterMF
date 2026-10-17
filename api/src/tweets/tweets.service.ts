@@ -11,6 +11,7 @@ import {
 } from '../counters/counters.service.js';
 import { DB, type Database } from '../db/db.module.js';
 import { OutboxService } from '../jobs/jobs.module.js';
+import { MediaService } from '../media/media.service.js';
 import { message } from '../jobs/queues.js';
 import { likes, tweets } from '../db/schema/index.js';
 import { TimelineService } from '../timeline/timeline.service.js';
@@ -41,6 +42,7 @@ export class TweetsService {
     @Inject(UserRecordsService) private readonly users: UserRecordsService,
     @Inject(TimelineService) private readonly timelines: TimelineService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
+    @Inject(MediaService) private readonly media: MediaService,
   ) {}
 
   // ---- Writes ------------------------------------------------------------
@@ -49,6 +51,7 @@ export class TweetsService {
     authorId: bigint,
     text: string,
     replyToId?: bigint,
+    mediaIds: bigint[] = [],
   ): Promise<TweetView> {
     // Replying to a retweet means replying to the original.
     const parentId = replyToId ? await this.contentId(replyToId) : null;
@@ -59,6 +62,7 @@ export class TweetsService {
       await tx
         .insert(tweets)
         .values({ id, authorId, text, replyToId: parentId });
+      await this.media.attach(tx, authorId, id, mediaIds);
       await this.outbox.add(tx, [
         message.fanout(id, authorId),
         // Replies and @mentions become notifications, in the worker.
@@ -337,6 +341,7 @@ export class TweetsService {
             parent && parentAuthor
               ? { id: parent.id, author: toUserRef(parentAuthor) }
               : null,
+          media: content.media,
           counts: {
             likes: content.counts.likes + (d.likes ?? 0),
             replies: content.counts.replies + (d.replies ?? 0),
@@ -368,6 +373,8 @@ export class TweetsService {
               keys.map((k) => BigInt(k.slice('cache:tweet:'.length))),
             ),
           );
+        // Images for these tweets, in the same cache entry.
+        const images = await this.media.forTweets(rows.map((t) => t.id));
         return new Map(
           rows.map((t) => [
             tweetCacheKey(t.id.toString()),
@@ -378,6 +385,7 @@ export class TweetsService {
               createdAt: t.createdAt.toISOString(),
               replyToId: t.replyToId?.toString() ?? null,
               retweetOfId: t.retweetOfId?.toString() ?? null,
+              media: images.get(t.id.toString()) ?? [],
               counts: {
                 likes: t.likeCount,
                 replies: t.replyCount,

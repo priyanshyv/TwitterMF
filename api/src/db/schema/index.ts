@@ -7,6 +7,7 @@ import {
   index,
   integer,
   pgEnum,
+  smallint,
   type AnyPgColumn,
   pgTable,
   primaryKey,
@@ -82,9 +83,11 @@ export const tweets = pgTable(
     uniqueIndex('tweets_one_retweet_per_user_idx')
       .on(t.authorId, t.retweetOfId)
       .where(sql`${t.retweetOfId} is not null`),
+    // Text may be empty when the tweet has images; the API checks that a
+    // tweet has text or media (the database can't see the media table here).
     check(
       'tweets_text_or_retweet',
-      sql`(${t.retweetOfId} is null and char_length(${t.text}) between 1 and 280)
+      sql`(${t.retweetOfId} is null and char_length(${t.text}) <= 280)
           or (${t.retweetOfId} is not null and ${t.text} = '')`,
     ),
   ],
@@ -195,6 +198,41 @@ export const notifications = pgTable(
       t.actorId,
       sql`coalesce(${t.tweetId}, 0)`,
     ),
+  ],
+);
+
+export const mediaStatus = pgEnum('media_status', [
+  'uploading', // URL handed out, waiting for the browser to upload
+  'processing', // uploaded; the worker is resizing it
+  'ready', // resized copies are in storage
+  'failed', // not a usable image
+]);
+
+// One uploaded image. The file itself lives in object storage; this row is
+// the metadata: who owns it, which tweet it's attached to, its state.
+export const media = pgTable(
+  'media',
+  {
+    id: id('id').primaryKey(),
+    ownerId: id('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // Set when the image is attached to a tweet (up to 4 per tweet).
+    tweetId: id('tweet_id').references(() => tweets.id, {
+      onDelete: 'cascade',
+    }),
+    position: smallint('position').notNull().default(0),
+    status: mediaStatus('status').notNull().default('uploading'),
+    contentType: text('content_type').notNull(),
+    bytes: integer('bytes').notNull(),
+    width: integer('width'),
+    height: integer('height'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('media_tweet_id_idx')
+      .on(t.tweetId, t.position)
+      .where(sql`${t.tweetId} is not null`),
   ],
 );
 

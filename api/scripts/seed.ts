@@ -66,7 +66,7 @@ if (!reset && existing.some((u) => u.username.toLowerCase() === 'demo'))
 if (reset) {
   console.log('Wiping all data…');
   await db.execute(
-    sql`truncate users, tweets, follows, likes, refresh_tokens, notifications, outbox cascade`,
+    sql`truncate users, tweets, follows, likes, refresh_tokens, notifications, outbox, media cascade`,
   );
 }
 // Everything in Redis is derived (caches, pending counts, the bloom filter,

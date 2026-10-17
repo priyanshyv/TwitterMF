@@ -1,3 +1,4 @@
+import type { MediaView } from '../media/media.service.js';
 import type { UserRef } from '../users/user-records.service.js';
 
 // What clients see. IDs are strings (64-bit Snowflakes).
@@ -9,6 +10,7 @@ export interface TweetView {
   // Set when this tweet answers another one.
   replyTo: { id: string; author: UserRef } | null;
   counts: { likes: number; replies: number; retweets: number };
+  media: MediaView[];
   // What the logged-in viewer has done to it; null for logged-out visitors.
   viewer: { liked: boolean; retweeted: boolean } | null;
 }
@@ -31,4 +33,5 @@ export interface TweetRecord {
   replyToId: string | null;
   retweetOfId: string | null;
   counts: { likes: number; replies: number; retweets: number };
+  media: MediaView[];
 }

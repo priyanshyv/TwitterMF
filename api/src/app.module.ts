@@ -10,6 +10,7 @@ import { loggerOptions } from './config/logger.js';
 import { DbModule } from './db/db.module.js';
 import { HealthModule } from './health/health.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
+import { MediaModule } from './media/media.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { RateLimitModule } from './rate-limit/rate-limit.module.js';
@@ -37,6 +38,7 @@ import { UsersModule } from './users/users.module.js';
     UsersModule,
     TweetsModule,
     NotificationsModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

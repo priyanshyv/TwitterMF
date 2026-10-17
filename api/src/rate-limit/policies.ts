@@ -47,6 +47,13 @@ export const POLICIES = {
     refillPerMinute: 60,
     key: 'user',
   },
+  // Image uploads: bursts of 20, then one every 3 seconds.
+  upload: {
+    algorithm: 'token-bucket',
+    capacity: 20,
+    refillPerMinute: 20,
+    key: 'user',
+  },
   // The sign-up form checks names as you type.
   'username-check': {
     algorithm: 'token-bucket',

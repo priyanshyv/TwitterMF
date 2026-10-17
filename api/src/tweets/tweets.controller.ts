@@ -24,15 +24,25 @@ const IdSchema = z
   .transform((v) => BigInt(v));
 const TweetId = new ZodPipe(IdSchema);
 
-const CreateTweetSchema = z.object({
-  text: z
-    .string()
-    .trim()
-    .min(1, 'Write something first')
-    // Count characters the way people see them: an emoji is 1, not 2.
-    .refine((t) => [...t].length <= 280, 'Keep it to 280 characters'),
-  replyToId: IdSchema.optional(),
-});
+const CreateTweetSchema = z
+  .object({
+    text: z
+      .string()
+      .trim()
+      // Count characters the way people see them: an emoji is 1, not 2.
+      .refine((t) => [...t].length <= 280, 'Keep it to 280 characters')
+      .default(''),
+    replyToId: IdSchema.optional(),
+    mediaIds: z
+      .array(IdSchema)
+      .max(4, 'Up to 4 images per post')
+      .refine((ids) => new Set(ids).size === ids.length, 'The same image twice')
+      .default([]),
+  })
+  .refine((t) => t.text.length > 0 || t.mediaIds.length > 0, {
+    message: 'Write something first',
+    path: ['text'],
+  });
 type CreateTweet = z.infer<typeof CreateTweetSchema>;
 
 @Controller()
@@ -48,7 +58,12 @@ export class TweetsController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodPipe(CreateTweetSchema)) body: CreateTweet,
   ) {
-    return this.tweets.create(user.id, body.text, body.replyToId);
+    return this.tweets.create(
+      user.id,
+      body.text,
+      body.replyToId,
+      body.mediaIds,
+    );
   }
 
   @Get('timeline')

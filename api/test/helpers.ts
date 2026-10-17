@@ -41,7 +41,7 @@ export async function resetData(app: NestFastifyApplication) {
   await app
     .get<Database>(DB)
     .execute(
-      sql`truncate users, tweets, follows, likes, refresh_tokens, notifications, outbox cascade`,
+      sql`truncate users, tweets, follows, likes, refresh_tokens, notifications, outbox, media cascade`,
     );
   await app.get<Redis>(REDIS).flushdb();
 }
