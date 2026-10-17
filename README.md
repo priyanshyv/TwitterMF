@@ -14,7 +14,7 @@ Concepts learned so far: [docs/concepts.md](docs/concepts.md)
 | Database       | PostgreSQL 16 + Drizzle ORM   | SQL you can see and tune; Aurora-compatible later                                                   |
 | Cache / queues | Redis 7 (BullMQ from Phase 4) | One tool for cache, counters, rate limits, bloom filter, job queue                                  |
 | Logs           | pino (JSON)                   | Structured logs, ready for Grafana/Loki                                                             |
-| Tests          | Vitest                        | Fast; e2e tests hit real Postgres and Redis                                                         |
+| Tests          | Vitest                        | Fast; e2e tests hit real Postgres, Redis, storage and search                                        |
 
 ## Quick start
 
@@ -22,7 +22,7 @@ Needs Node 24 and Docker Desktop (running).
 
 ```bash
 npm run setup   # install deps, create api/.env and web/.env.local from the examples
-npm run dev     # starts Postgres + Redis in Docker, then the API and web app
+npm run dev     # starts Postgres, Redis, storage and search in Docker, then the API, worker and web app
 ```
 
 - Web: http://localhost:3001
@@ -32,20 +32,21 @@ To get a populated network to play with, run `npm run db:seed` and log in as **d
 
 ## Scripts (run from the repo root)
 
-| Command                                                                               | What it does                                                                         |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `npm run dev`                                                                         | Infra up, then API (watch mode) and web together                                     |
-| `npm run dev:stop`                                                                    | Stop a running `npm run dev` (e.g. one left open in another terminal)                |
-| `npm run infra:up` / `infra:down`                                                     | Start / stop Postgres and Redis                                                      |
-| `npm run infra:reset`                                                                 | Stop and **delete** local DB and Redis data                                          |
-| `npm run lint` / `typecheck` / `build`                                                | Checks for both apps (CI runs these)                                                 |
-| `npm test` / `npm run test:e2e`                                                       | Unit tests / API e2e tests (needs infra up)                                          |
-| `npm run db:generate` / `db:migrate`                                                  | Create / apply Drizzle migrations                                                    |
-| `npm run db:studio`                                                                   | Browse the database in Drizzle Studio                                                |
-| `npm run db:seed`                                                                     | Add ~60 fake people, tweets, likes and follows (`-- --reset` wipes everything first) |
-| `npm run counters:reconcile`                                                          | Recompute every stored count from the source rows                                    |
-| `npm run jobs`                                                                        | Background job queues and the dead-letter queue (`-- --replay` re-runs dead jobs)    |
-| `npm run lab:explain` / `lab:bloom` / `lab:stampede` / `lab:ratelimit` / `lab:fanout` | Experiments that measure each concept                                                |
+| Command                                                                                               | What it does                                                                         |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `npm run dev`                                                                                         | Infra up, then API (watch mode) and web together                                     |
+| `npm run dev:stop`                                                                                    | Stop a running `npm run dev` (e.g. one left open in another terminal)                |
+| `npm run infra:up` / `infra:down`                                                                     | Start / stop the Docker services (Postgres, Redis, storage, search)                  |
+| `npm run infra:reset`                                                                                 | Stop and **delete** local DB and Redis data                                          |
+| `npm run lint` / `typecheck` / `build`                                                                | Checks for both apps (CI runs these)                                                 |
+| `npm test` / `npm run test:e2e`                                                                       | Unit tests / API e2e tests (needs infra up)                                          |
+| `npm run db:generate` / `db:migrate`                                                                  | Create / apply Drizzle migrations                                                    |
+| `npm run db:studio`                                                                                   | Browse the database in Drizzle Studio                                                |
+| `npm run db:seed`                                                                                     | Add ~60 fake people, tweets, likes and follows (`-- --reset` wipes everything first) |
+| `npm run counters:reconcile`                                                                          | Recompute every stored count from the source rows                                    |
+| `npm run jobs`                                                                                        | Background job queues and the dead-letter queue (`-- --replay` re-runs dead jobs)    |
+| `npm run search:reindex`                                                                              | Rebuild the search indexes and trending from Postgres                                |
+| `npm run lab:explain` / `lab:bloom` / `lab:stampede` / `lab:ratelimit` / `lab:fanout` / `lab:breaker` | Experiments that measure each concept                                                |
 
 ## Layout
 
@@ -53,7 +54,7 @@ To get a populated network to play with, run `npm run db:seed` and log in as **d
 api/     NestJS API (src/main.ts) and background worker (src/worker.ts): auth, tweets,
          timelines, cache, counters, rate limits, queues, notifications, WebSockets
 web/     Next.js app
-infra/   docker-compose.yml for local Postgres and Redis
+infra/   docker-compose.yml: Postgres, Redis, RustFS (S3 storage), Meilisearch
 docs/    concepts.md: what each concept is, why we need it, where it lives in the code
 ```
 

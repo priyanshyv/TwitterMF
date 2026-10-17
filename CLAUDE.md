@@ -6,7 +6,7 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 
 - Full plan with concept tags: [docs/ROADMAP.md](docs/ROADMAP.md). It is the source of truth; keep it updated.
 - Concepts log: [docs/concepts.md](docs/concepts.md). Add an entry (What / Why / Where / Try it) whenever a concept's code lands.
-- Status: **Phases 1–4 done** (2026-10-16). **Next: Phase 5 (media and search), starting with MinIO + presigned uploads.**
+- Status: **Phases 1–5 done** (2026-10-18). **Next: Phase 6 (prove it scales), starting with a bigger seed and Prometheus + Grafana.**
 
 ## How to work with the owner
 
@@ -25,6 +25,9 @@ A Twitter clone built to be very scalable on **free resources only**, and deploy
 | UI           | shadcn/ui (Radix, "nova" preset) + Tailwind v4       | Neutral, minimal, X-like look; dark mode via next-themes (`.dark` class)     |
 | DB           | Postgres 16 + Drizzle ORM (`drizzle-kit`)            | Chosen so the SQL stays visible and tunable                                  |
 | Cache/queues | Redis 8 (ioredis 6); BullMQ 6                        | Redis 8 has bloom filters (`BF.*`) built in                                  |
+| Storage      | RustFS 1.0.3 (S3 API) via @aws-sdk/client-s3         | MinIO stopped publishing free images; same code works on R2                  |
+| Search       | Meilisearch v1.55 (`meilisearch` client 0.62)        | Fed by outbox jobs; Postgres ILIKE + pg_trgm fallback behind a breaker       |
+| Images       | sharp                                                | WebP 1600/600, EXIF stripped, in the worker                                  |
 | Real-time    | `ws` WebSocket server on the API at `/ws`            | Redis pub/sub `rt:user:<id>` between worker and API instances                |
 | Auth         | argon2id + jose (HS256 JWT) + @fastify/cookie        | httpOnly cookies `tmf_at` (15 min) / `tmf_rt` (30 days, rotating)            |
 | Config       | zod-validated env in `api/src/config/env.ts`         | App crashes at boot on bad env                                               |
@@ -50,6 +53,8 @@ npm run db:seed      # ~60 fake people + tweets/likes/follows (-- --reset wipes 
 npm run counters:reconcile  # recompute stored counts from source rows
 npm run jobs         # queue sizes + dead-letter queue; -- --replay re-runs dead jobs
 npm run lab:fanout   # fan-out on read vs write, latency + throughput
+npm run lab:breaker  # a dead dependency with and without a circuit breaker
+npm run search:reindex  # rebuild Meilisearch indexes + trending from Postgres
 ```
 
 Run the full check line above before every commit; CI runs the same steps.
@@ -76,10 +81,15 @@ Run the full check line above before every commit; CI runs the same steps.
 - Web: tweet UI is `FeedItemCard` / `TweetCard` (`large` for the focused tweet) + client `TweetActions` (optimistic like/retweet, tinted hover circles, `animate-pop` on the user's own toggle); thread page `/[username]/status/[id]`; links via `tweetHref()`. Server components fetch through `web/src/lib/api/server.ts` (forwards cookies); client components use `api()` from `web/src/lib/api/client.ts` (refresh once on 401, then retry). `web/src/proxy.ts` refreshes expiring access tokens before pages render. After a mutation, call `router.refresh()`.
 - Every module that holds connections implements `onApplicationShutdown`; `main.ts` calls `enableShutdownHooks()`.
 - Use explicit `@Inject(TOKEN)` everywhere: Vitest doesn't emit decorator metadata, so class-type injection breaks in tests.
+- Test isolation for Phase 5: bucket `twittermf-test`, Meilisearch indexes prefixed `test_`, `BREAKER_RESET_MS=300` (all in `vitest.config.e2e.ts`); `resetData` clears test indexes. Fake Meilisearch outages by wrapping the client's `index()` (see `search.e2e-spec.ts`); fake Redis outages by stubbing a queue's `addBulk`.
 - e2e tests use `app.inject()` (Fastify), not supertest, and override providers to simulate failures. Use `createTestApp` (runs the workers in-process by default), `settle(app)` (wait for queues to drain), `resetData` and `signup` from `test/helpers.ts`. Fake Redis stubs need `duplicate()` (the gateway's subscriber). WebSocket tests: `app.listen(0)` + the `ws` client. They run against a separate `twitter_test` database and Redis DB 1 (set in `vitest.config.e2e.ts`), one file at a time, with `RATE_LIMIT_ENABLED=false` and `COUNTER_FLUSH_INTERVAL_MS=0` (call `CountersService.flush()` by hand). To test limits, override `ENV` (see `rate-limit.e2e-spec.ts`).
 - Redis DBs: 0 = dev app, 1 = tests, 2 = lab scripts. Everything in Redis is derived and can be flushed, except queued jobs (flushing drops pending fan-out/notifications).
 - Processes: `api` (`src/main.ts`, HTTP + WebSockets), `job` (`src/worker.ts`, BullMQ consumers; boots `WorkerModule` = AppModule + workers via `createApplicationContext`), `web`. `npm run dev` starts all three, the worker after the API is healthy.
-- `api/src/jobs/`: queue names, job payloads and retry options in `queues.ts`; enqueue only through `JobsService` (`fanout()`, `notify()`), after the DB write, never failing the request. Job IDs can't contain `:`. Dead letters: `dead-letter.ts`. New job type = payload type in `queues.ts` + a branch in the consumer.
+- `api/src/jobs/`: queue names, job payloads and retry options in `queues.ts`. **Produce jobs only via the outbox**: `outbox.add(tx, [message.fanout(...), message.notify(...), message.search(...), message.media(...)])` inside the same `db.transaction` as the change. `OutboxRelay` (worker only) moves rows to BullMQ (LISTEN/NOTIFY + 1 s poll, `FOR UPDATE SKIP LOCKED`, job ID `outbox-<id>`). Job IDs can't contain `:`. Dead letters: `dead-letter.ts`. New job type = payload in `queues.ts` + `message.*` helper + relay `QUEUE_KEY` + a consumer in `worker.service.ts` + `settle()` queue list in `test/helpers.ts`.
+- `api/src/storage/`: `StorageService` (bucket setup on boot, `presignUpload`, `head` behind the storage breaker, `get/put/delete`, `publicUrl`). Keys: `uploads/<id>` private, `media/<id>/{large,small}.webp` public.
+- `api/src/media/`: `MediaService` (createUpload / complete / attach in the tweet tx / forTweets), `MediaProcessor` (worker; `UnrecoverableError` for bad files). Tweet records carry `media` in the cache; the processor invalidates `cache:tweet:<id>` (twice).
+- `api/src/search/`: `SearchService` (Meilisearch through `breakers.run('search', ...)`, Postgres fallback returns `source: 'postgres'`; `indexTweet/indexUser` idempotent from current DB state; `reindexAll`), `TrendsService` (hour buckets `trends:h:<hour>`, Lua weighted union, 60 s cache `trends:top`), `SearchProcessor`. Hashtags: `common/hashtags.ts` (`HASHTAG_CHARS` includes `\p{M}`).
+- `api/src/breakers/`: `BreakersService.run(name, task)`; add a name to `BreakerName` + `SETTINGS` for a new dependency. `/health` shows states; optional deps never fail readiness.
 - `api/src/timeline/`: `TimelineService.page()` (window read of `timeline:<id>` + merge of `timeline:<id>:celebs` authors), `push()` (LPUSHX, worker), `invalidate()` on follow/unfollow. `FanoutProcessor` runs in the worker. Lists end with sentinel `0`.
 - `api/src/notifications/`: `NotificationsService.handle(job)` (worker side; dedupe via unique index) and `list/unreadCount/markAllRead` (API side).
 - `api/src/realtime/`: `RealtimePublisher.publish(userIds, event)` from anywhere; `RealtimeGateway` only activates when an HTTP server exists. Events: `notification {unread}`, `timeline {tweetId, authorId}`; add new ones to both `realtime.publisher.ts` and `web/src/lib/api/types.ts`.
@@ -119,14 +129,20 @@ Run the full check line above before every commit; CI runs the same steps.
 - WebSockets aren't covered by CORS; the gateway checks `Origin` itself. Cookies reach the API's `/ws` because localhost:3001 and :4000 are the same site.
 - Measure: `lab:fanout` showed the first hybrid read slower than fan-out on read until the celebrity set was stored and the list read in windows. Re-run it after timeline changes.
 - `FANOUT_MAX_FOLLOWERS=40` in dev `.env` (seed celebrities have ~55 followers); default 10000.
+- Hashtag/word regexes must include `\p{M}` (combining marks) or Indic scripts break (`#भारत` -> `#भ`).
+- Lua: `unpack(t)` only expands fully as the LAST argument; build an args table and `redis.call(unpack(args))`.
+- When a worker updates a row other requests may have changed meanwhile, read the fields it needs from `UPDATE ... RETURNING`, not an earlier SELECT (media/tweet cache race).
+- Trends are cached 60 s, so a new hashtag appears within a minute. Seeded tweets are older than 24 h, so dev trends start empty.
+- Next's `@next/next/no-img-element` warns on `<img>`; we use plain img for already-resized storage URLs with an eslint-disable comment.
+- Docker images: MinIO's free images are gone (pull fails); SeaweedFS failed presigned PUT and public-read in our probe; RustFS passed all checks.
 
-## Next steps (Phase 5: Media and search)
+## Next steps (Phase 6: Prove it scales)
 
-1. MinIO in `infra/docker-compose.yml` (S3-compatible; Cloudflare R2 later), presigned uploads from the browser, a `media` table, images on tweets.
-2. Image resize worker (sharp) as a new job type in the existing worker.
-3. Transactional outbox: write jobs to a Postgres `outbox` table in the same transaction as the tweet; a relay moves them to BullMQ. Closes the dual-write gap noted in `JobsService.add()`; then use it for search indexing.
-4. Meilisearch in docker-compose, indexing tweets and users from the outbox.
-5. Circuit breaker (opossum) around Meilisearch and object storage; search falls back to Postgres ILIKE when open.
-6. Hashtags and trending: extract on post, time-decayed scores in a Redis sorted set.
+1. Bigger seed: ~1M users / 20M tweets with a few celebrity accounts (COPY or batched inserts; keep `npm run db:seed` small, add a separate `db:seed:big`).
+2. Monitoring: Prometheus + Grafana in docker-compose; expose metrics (request p95/p99 by route, DB pool usage, Redis memory, queue depth, outbox lag, breaker state).
+3. k6 load tests: timeline reads, posting, following; record requests/s per endpoint.
+4. Fix the top 3 bottlenecks the data shows (EXPLAIN ANALYZE + dashboards only).
+5. PgBouncer; a Postgres read replica + 2 API instances behind Nginx (read-your-writes from the primary).
+6. Consistent hashing for the timeline cache across 2-3 Redis nodes; bulkheads (separate pools/limits so slow search can't starve timelines).
 
 When a task is done, tick it in `docs/ROADMAP.md` and add its concept to `docs/concepts.md`.

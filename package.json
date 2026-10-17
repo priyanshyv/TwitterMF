@@ -34,7 +34,8 @@
     "dev:stop": "node scripts/dev-stop.mjs",
     "jobs": "npm run jobs --silent -w api --",
     "lab:fanout": "npm run lab:fanout --silent -w api",
-    "search:reindex": "npm run search:reindex --silent -w api"
+    "search:reindex": "npm run search:reindex --silent -w api",
+    "lab:breaker": "npm run lab:breaker --silent -w api"
   },
   "devDependencies": {
     "prettier": "^3.9.10"

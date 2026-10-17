@@ -55,16 +55,17 @@ Done when posting a tweet updates followers' feeds in the background and notific
 - [x] WebSocket gateway, with Redis pub/sub so it works across API instances. _Concepts: WebSockets, pub/sub_
 - [x] Measure it: `npm run lab:fanout` (fan-out on read vs write, under concurrency). _Concepts: measure before trusting a design_
 
-## 5. Media and search (weeks 10–11)
+## 5. Media and search (weeks 10–11): done
 
 Done when users can attach images and search, and a search outage doesn't take the app down.
 
-- [ ] MinIO in Docker Compose (S3-compatible; Cloudflare R2 later). _Concepts: object storage_
-- [ ] Presigned uploads straight from the browser. _Concepts: presigned URLs_
-- [ ] Image resize worker (sharp).
-- [ ] Meilisearch fed through a transactional outbox. _Concepts: transactional outbox, eventual consistency_
-- [ ] Circuit breaker (opossum) around search and storage: open for 30s, fall back to Postgres ILIKE, half-open probe. _Concepts: circuit breaker, graceful degradation_
-- [ ] Hashtags and trending: Redis sorted set with time decay. _Concepts: sorted sets, time-decay ranking_
+- [x] S3-compatible storage in Docker Compose (RustFS, since MinIO no longer publishes free images; Cloudflare R2 later). _Concepts: object storage_
+- [x] Presigned uploads straight from the browser. _Concepts: presigned URLs_
+- [x] Image resize worker (sharp).
+- [x] Meilisearch fed through a transactional outbox. _Concepts: transactional outbox, eventual consistency_
+- [x] Circuit breaker (opossum) around search and storage: open for 30s, fall back to Postgres ILIKE, half-open probe. _Concepts: circuit breaker, graceful degradation_
+- [x] Hashtags and trending: Redis sorted set with time decay. _Concepts: sorted sets, time-decay ranking_
+- [x] Measure it: `npm run lab:breaker` (a dead dependency with and without a breaker). _Concepts: fail fast_
 
 ## 6. Prove it scales (weeks 12–14)
 

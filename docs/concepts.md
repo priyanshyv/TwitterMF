@@ -321,3 +321,115 @@ At this tiny scale (31 follows, 1,500 tweets) Postgres is barely working either 
 **Today:** enqueueing failures are logged, and the tweet still appears (cold timelines rebuild from Postgres; your own list gets a direct push).
 **Phase 5:** the **transactional outbox** fixes this properly: the job is written to a Postgres table _in the same transaction as the tweet_, and a relay moves it to the queue.
 **Where:** `JobsService.add()` in `api/src/jobs/jobs.module.ts`.
+
+## Phase 5: Media and search
+
+### Object storage (S3)
+
+**What:** Files (images) live in an object store, not in Postgres. We run **RustFS** locally (S3-compatible; MinIO stopped publishing free Docker images in 2025). The same code works against AWS S3 or Cloudflare R2, so moving to R2 is a configuration change.
+**Why:** Databases are built for small rows. Storing a 3 MB photo per tweet would bloat backups, crowd out the cache and slow every query on that table. Object stores are cheap per GB, serve files directly to browsers or a CDN, and scale without any work from us.
+**Layout:** `uploads/<id>` (private, raw) and `media/<id>/large.webp`, `media/<id>/small.webp` (public). The bucket policy makes only `media/*` publicly readable.
+**Where:** `api/src/storage/storage.service.ts`; `storage` in `infra/docker-compose.yml`.
+
+### Presigned uploads
+
+**What:** The browser asks our API for permission to upload, and gets a **presigned URL**: permission to `PUT` exactly one key, with exactly that content type and size, for 5 minutes, signed with our secret without revealing it. The browser uploads **straight to storage**, then tells the API "done", and the API checks the object really arrived as announced.
+**Why:**
+
+- **The file bypasses our servers:** a 5 MB photo never goes through our API, so no API server bandwidth, memory or time is spent relaying it.
+- **The URL can only do what it says:** a different size, a different key, or after 5 minutes, and storage answers 403.
+- **The signature covers the host:** URLs are signed for the browser-facing address (`STORAGE_PUBLIC_ENDPOINT`), not the internal one.
+
+**Where:** `presignUpload()` in `storage.service.ts`; `api/src/media/media.service.ts`; `web/src/lib/upload.ts` (it uses XHR because `fetch` can't report upload progress). Test: "only accepts the exact upload it signed for".
+
+### Image processing in the worker
+
+**What:** The media job uses **sharp** to:
+
+- **auto-rotate** using the camera's EXIF orientation, then **strip all metadata**
+- resize to 1600 px and 600 px WebP, never upscaling
+- refuse images over 50 megapixels
+- delete the raw upload
+
+**Why:**
+
+- **EXIF leaks location:** phone photos carry EXIF, often with the **GPS coordinates** of where they were taken, and publishing them leaks users' locations.
+- **Speed:** WebP at the right size turns a 6 MB photo into a ~200 KB image.
+- **Safety:** re-encoding means we never serve the uploader's original bytes, which could be a crafted file. The pixel limit blocks "decompression bombs" (a tiny file that expands to gigabytes of pixels).
+
+**Where:** `api/src/media/media.processor.ts`. Test: "strips EXIF metadata".
+
+### Not every failure deserves a retry
+
+**What:** When a file isn't a valid image, the job marks it `failed` and throws BullMQ's **`UnrecoverableError`**: no retries, and no dead-letter entry either.
+**Why:** Retries help with _temporary_ problems (network, a restarting service). A corrupt file will be just as corrupt on the 5th attempt. Retrying it only wastes worker time, and dead-lettering it gives a human nothing to fix.
+**Where:** `media.processor.ts`; the `UnrecoverableError` branch in `worker.service.ts`. Test: "marks a corrupt image as failed without retrying it" (exactly 1 failure, not 5).
+
+### Transactional outbox
+
+**What:** Jobs are no longer pushed to Redis from the request. They're written as rows into an **`outbox` table in the same Postgres transaction** as the change that causes them (tweet, like, follow, retweet, sign-up, finished upload). A relay in the worker moves rows to BullMQ, then deletes them.
+**Why:** Phase 4 did "commit the tweet, _then_ add the job to Redis". A crash or Redis outage between those two steps left a saved tweet with no fan-out or notifications: the **dual-write problem**. Now the tweet and its jobs commit **together or not at all**, and if Redis is down the rows simply wait in Postgres.
+**How the relay works:**
+
+- **Wake-up:** Postgres **`LISTEN/NOTIFY`**. A trigger fires `pg_notify('outbox')`, which is delivered only on **COMMIT**, so the relay wakes within milliseconds. A 1-second poll catches anything missed.
+- **Parallel relays:** batches are read with **`FOR UPDATE SKIP LOCKED`**, so several relays can run at once without taking the same rows.
+- **No duplicate jobs:** each job ID is `outbox-<row id>`, so relaying the same row twice (crash between enqueue and delete) doesn't create a second job.
+
+**Where:** `outbox` in `schema/index.ts` + trigger in `api/drizzle/0004_outbox.sql`; `OutboxService` in `api/src/jobs/jobs.module.ts`; `api/src/jobs/outbox.relay.ts`. Tests in `api/test/outbox.e2e-spec.ts`: a rollback leaves no job, jobs survive Redis being unreachable, NOTIFY wakes the relay in under 500 ms, and two relays sending 250 rows never send one twice.
+
+### Full-text search and eventual consistency
+
+**What:** **Meilisearch** indexes tweets and users:
+
+- **Typo tolerant:** "postgress" finds "postgres".
+- **Ranked:** relevance first, then recency for tweets and followers for people.
+- **Exact hashtags:** `#tag` queries use an exact hashtag filter.
+
+**It's a derived copy of Postgres**, updated by outbox jobs a moment after each change.
+**Why:** `LIKE '%word%'` can't rank, can't handle typos, and gets slow. A search engine can. The cost is **eventual consistency**: a brand-new tweet becomes searchable a few hundred milliseconds later, not instantly. For search, that's fine. Because the index is derived, `npm run search:reindex` can always rebuild it (1,227 tweets in about 400 ms).
+**Where:** `api/src/search/search.service.ts`, `search.processor.ts`; `GET /search`.
+
+### Circuit breaker
+
+**What:** Calls to search, and the upload check against storage, go through a **circuit breaker** (opossum):
+
+| State         | Behavior                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **closed**    | Normal: calls go through, failures are counted                                                                        |
+| **open**      | ≥ 50% of at least 5 calls in 10 s failed: every call **fails immediately**, without touching the dependency, for 30 s |
+| **half-open** | After 30 s, **one trial call** goes through. Success closes it; failure opens it again                                |
+
+**Why:** A dead service usually doesn't fail fast; it **hangs**. Measured with `npm run lab:breaker` (20 requests, 300 ms timeout, dependency not answering):
+
+| Setup           | Total    | Last 10 requests, average |
+| --------------- | -------- | ------------------------- |
+| Timeout only    | 6,020 ms | 300.97 ms                 |
+| Circuit breaker | 1,508 ms | **0.02 ms**               |
+
+Without a breaker, every request pays the full timeout and holds a connection while it waits, which is how one sick dependency drags the whole API down. With one, after 5 failures the rest fail instantly, the fallback answers, and the struggling service gets breathing room. Recovery is detected by a single trial call.
+**Where:** `api/src/breakers/breakers.service.ts`; used in `search.service.ts` and `storage.service.ts`; states are shown in `/health`. Tests: "falls back to Postgres, opens, fails fast, then recovers" and "stays open if the trial call fails".
+
+### Graceful degradation, and which dependencies are critical
+
+**What:** When search is unavailable, `/search` answers from **Postgres** (`ILIKE` on **trigram indexes**) and returns `source: "postgres"`, and the page shows a "basic mode" notice. When storage is unavailable, only uploads fail (fast, with a clear 503).
+**Why:** A broken optional feature shouldn't take down the whole app. That's also why `/health` reports search and storage but **only Postgres and Redis decide readiness**. Otherwise a load balancer would pull every API instance out of service because search was down, turning a degraded feature into a full outage.
+**Trigram indexes:** `pg_trgm` indexes every 3-letter slice of a string ("alice" → "ali", "lic", "ice"), so `ILIKE '%ali%'` can use an index instead of reading every row.
+**Where:** fallbacks in `search.service.ts`; `api/drizzle/0006_search_trigram.sql`; `api/src/health/health.controller.ts`.
+**Try it:** `docker stop twittermf-search-1`, search for something, see the amber notice and real results, then `docker start twittermf-search-1`.
+
+### Trending hashtags with time decay (sorted sets)
+
+**What:**
+
+- **Counting:** each hour has a Redis **sorted set** (`trends:h:<hour>`: tag → uses).
+- **Ranking:** the last 24 hours are summed with weights that **halve every 6 hours** (a use 6 h ago counts 0.5, 12 h ago 0.25), using `ZUNIONSTORE … WEIGHTS` inside one Lua script.
+- **Caching:** the top 10 are cached for 60 s.
+
+**Why:** "Most used ever" would keep `#coffee` on top forever; trending means **a lot, recently**. Hour buckets that expire after 48 h keep memory bounded, and Redis does the weighted sum itself. Each tweet is counted once even if its job runs twice (a `SET NX` marker), the same idempotent-consumer rule as Phase 4.
+**Where:** `api/src/search/trends.service.ts`; `GET /trends`. Test: "lets recent uses outweigh older ones": 3 uses 18 h ago (score 0.38) lose to 1 use now (score 1).
+
+### Bugs worth remembering from this phase
+
+- **Unicode words have marks.** In Hindi, "भारत" is भ + ा + र + त, and the vowel sign "ा" is a combining **mark** (`\p{M}`), not a letter (`\p{L}`). A letters-only pattern turned `#भारत` into `#भ`. The tests caught it.
+- **Lua's `unpack()` only spreads its values when it's the last argument** of a call; in the middle it passes only the first. Build the argument table first.
+- **Read state at the moment you act on it.** The image worker read the media row _before_ the tweet attached it, so it didn't know which tweet's cache to clear. The fix: get the tweet ID from the `UPDATE … RETURNING` that marks the image ready. The test passed alone and failed in the full suite, a classic sign of a race.

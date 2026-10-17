@@ -29,7 +29,8 @@
     "worker": "node dist/worker",
     "worker:dev": "tsx watch --clear-screen=false src/worker.ts",
     "lab:fanout": "tsx scripts/fanout-experiment.ts",
-    "search:reindex": "tsx scripts/reindex-search.ts"
+    "search:reindex": "tsx scripts/reindex-search.ts",
+    "lab:breaker": "tsx scripts/breaker-experiment.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",
